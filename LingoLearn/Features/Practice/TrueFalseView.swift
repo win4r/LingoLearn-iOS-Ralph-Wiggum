@@ -480,6 +480,12 @@ struct TrueFalseButton: View {
                 startPoint: .top,
                 endPoint: .bottom
             )
+        case .missed:
+            return LinearGradient(
+                colors: [Color.orange.opacity(0.15), Color.yellow.opacity(0.1)],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
         }
     }
 
@@ -499,6 +505,8 @@ struct TrueFalseButton: View {
             return LinearGradient(colors: [.red, .orange], startPoint: .leading, endPoint: .trailing)
         case .disabled:
             return LinearGradient(colors: [Color.gray.opacity(0.2)], startPoint: .leading, endPoint: .trailing)
+        case .missed:
+            return LinearGradient(colors: [.orange, .yellow], startPoint: .leading, endPoint: .trailing)
         }
     }
 

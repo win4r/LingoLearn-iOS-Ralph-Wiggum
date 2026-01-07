@@ -9,6 +9,7 @@ enum SessionType: String, Codable, CaseIterable {
     case fillInBlank = "Fill in Blank"
     case listening = "Listening"
     case trueFalse = "True/False"
+    case multiSelect = "Multi-Select"
 }
 
 @Model

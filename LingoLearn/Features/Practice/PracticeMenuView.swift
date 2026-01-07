@@ -56,6 +56,13 @@ struct PracticeMenuView: View {
             color: .blue
         ),
         TestType(
+            id: .multiSelect,
+            icon: "checklist.checked",
+            title: "多选题",
+            description: "选择所有正确的中文释义",
+            color: .purple
+        ),
+        TestType(
             id: .fillInBlank,
             icon: "pencil.circle.fill",
             title: "填空题",
@@ -74,7 +81,7 @@ struct PracticeMenuView: View {
             icon: "checkmark.circle.fill",
             title: "判断题",
             description: "判断中文翻译是否正确",
-            color: .purple
+            color: .pink
         )
     ]
 
@@ -597,6 +604,9 @@ struct TestViewRouter: View {
         switch testType {
         case .multipleChoice:
             MultipleChoiceView(wordCount: wordCount, category: category)
+                .environment(\.modelContext, modelContext)
+        case .multiSelect:
+            MultiSelectQuizView(wordCount: wordCount, category: category)
                 .environment(\.modelContext, modelContext)
         case .fillInBlank:
             FillInBlankView(wordCount: wordCount, category: category)

@@ -30,9 +30,16 @@ struct WrongAnswer {
     let correctAnswer: String
 }
 
+struct MultiSelectQuestion {
+    let word: Word
+    let options: [String]
+    let correctAnswers: Set<String>
+}
+
 @Observable
 class PracticeViewModel {
     var questions: [TestQuestion] = []
+    var multiSelectQuestions: [MultiSelectQuestion] = []
     var currentQuestionIndex = 0
     var correctAnswers = 0
     var wrongAnswers: [WrongAnswer] = []
@@ -42,6 +49,12 @@ class PracticeViewModel {
     var sessionStartTime: Date?
     var questionTimeLimit: Double = AppConstants.Practice.defaultTimeLimit
 
+    // Multi-select scoring
+    var multiSelectScore: Double = 0
+    var multiSelectFullCorrect = 0
+    var multiSelectPartialCorrect = 0
+    var multiSelectZeroScore = 0
+
     private var timer: Timer?
     private var allWords: [Word] = []
 
@@ -50,13 +63,18 @@ class PracticeViewModel {
         return questions[currentQuestionIndex]
     }
 
+    var currentMultiSelectQuestion: MultiSelectQuestion? {
+        guard currentQuestionIndex < multiSelectQuestions.count else { return nil }
+        return multiSelectQuestions[currentQuestionIndex]
+    }
+
     var progress: Double {
         guard !questions.isEmpty else { return 0 }
         return Double(currentQuestionIndex) / Double(questions.count)
     }
 
     var totalQuestions: Int {
-        questions.count
+        questions.isEmpty ? multiSelectQuestions.count : questions.count
     }
 
     var accuracy: Double {
@@ -80,6 +98,8 @@ class PracticeViewModel {
             generateListeningQuestions(from: words)
         case .trueFalse:
             generateTrueFalseQuestions(from: words)
+        case .multiSelect:
+            generateMultiSelectQuestions(from: words)
         default:
             break
         }
@@ -150,6 +170,79 @@ class PracticeViewModel {
         }
     }
 
+    private func generateMultiSelectQuestions(from words: [Word]) {
+        multiSelectQuestions = words.map { word in
+            let correctAnswer = word.chinese
+            var correctAnswers: Set<String> = [correctAnswer]
+
+            // Add 1-2 additional "correct" answers by including synonymous translations
+            // For simplicity, we'll treat the main translation as the only true correct answer
+            // and simulate multiple correct by splitting if the translation contains multiple meanings
+            let chineseParts = correctAnswer.components(separatedBy: CharacterSet(charactersIn: ";；,，"))
+                .map { $0.trimmingCharacters(in: .whitespaces) }
+                .filter { !$0.isEmpty }
+
+            if chineseParts.count > 1 {
+                // Word has multiple meanings, use them as separate correct answers
+                correctAnswers = Set(chineseParts.prefix(3))
+            }
+
+            // Generate distractors from other words
+            let otherWords = words.filter { $0.english != word.english }
+            let distractorWords = otherWords.shuffled().prefix(6 - correctAnswers.count)
+            let distractors = distractorWords.map { $0.chinese }
+
+            // Combine and shuffle all options
+            var allOptions = Array(correctAnswers) + distractors
+            allOptions.shuffle()
+
+            return MultiSelectQuestion(
+                word: word,
+                options: allOptions,
+                correctAnswers: correctAnswers
+            )
+        }
+    }
+
+    /// Submit multi-select answer and calculate partial credit score
+    /// Returns: (score, isFullyCorrect)
+    func submitMultiSelectAnswer(selectedAnswers: Set<String>) -> (score: Double, isFullyCorrect: Bool) {
+        stopTimer()
+
+        guard let question = currentMultiSelectQuestion else { return (0, false) }
+
+        let correctSelected = selectedAnswers.intersection(question.correctAnswers).count
+        let incorrectSelected = selectedAnswers.subtracting(question.correctAnswers).count
+        let totalCorrect = question.correctAnswers.count
+
+        // Partial credit formula: max(0, (correctSelected - incorrectSelected)) / totalCorrect
+        let rawScore = Double(correctSelected - incorrectSelected)
+        let score = max(0, rawScore) / Double(totalCorrect)
+
+        multiSelectScore += score
+
+        let isFullyCorrect = correctSelected == totalCorrect && incorrectSelected == 0
+
+        if isFullyCorrect {
+            multiSelectFullCorrect += 1
+            correctAnswers += 1
+            SoundService.shared.playSuccess()
+        } else if score > 0 {
+            multiSelectPartialCorrect += 1
+            SoundService.shared.playTap()
+        } else {
+            multiSelectZeroScore += 1
+            wrongAnswers.append(WrongAnswer(
+                word: question.word,
+                userAnswer: Array(selectedAnswers).joined(separator: ", "),
+                correctAnswer: Array(question.correctAnswers).joined(separator: ", ")
+            ))
+            SoundService.shared.playError()
+        }
+
+        return (score, isFullyCorrect)
+    }
+
     func startTimer() {
         timeRemaining = questionTimeLimit
         isTimerRunning = true
@@ -200,7 +293,8 @@ class PracticeViewModel {
     func nextQuestion() {
         currentQuestionIndex += 1
 
-        if currentQuestionIndex >= questions.count {
+        let total = questions.isEmpty ? multiSelectQuestions.count : questions.count
+        if currentQuestionIndex >= total {
             completeTest()
         } else {
             startTimer()
@@ -217,9 +311,10 @@ class PracticeViewModel {
         guard let startTime = sessionStartTime else { return }
 
         let duration = Date().timeIntervalSince(startTime)
+        let wordsCount = questions.isEmpty ? multiSelectQuestions.count : questions.count
         let session = StudySession(
             sessionType: sessionType,
-            wordsStudied: questions.count,
+            wordsStudied: wordsCount,
             wordsCorrect: correctAnswers,
             wordsIncorrect: wrongAnswers.count,
             duration: duration,
@@ -232,6 +327,7 @@ class PracticeViewModel {
 
     func reset() {
         questions = []
+        multiSelectQuestions = []
         currentQuestionIndex = 0
         correctAnswers = 0
         wrongAnswers = []
@@ -239,6 +335,10 @@ class PracticeViewModel {
         isTimerRunning = false
         testCompleted = false
         sessionStartTime = nil
+        multiSelectScore = 0
+        multiSelectFullCorrect = 0
+        multiSelectPartialCorrect = 0
+        multiSelectZeroScore = 0
         stopTimer()
     }
 
