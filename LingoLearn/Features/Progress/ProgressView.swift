@@ -365,6 +365,7 @@ struct SessionHistoryRow: View {
         case .multipleChoice: return "list.bullet.rectangle"
         case .fillInBlank: return "character.cursor.ibeam"
         case .listening: return "headphones"
+        case .trueFalse: return "checkmark.circle"
         }
     }
 
@@ -372,7 +373,7 @@ struct SessionHistoryRow: View {
         switch session.sessionType {
         case .learning: return .blue
         case .review: return .purple
-        case .practice, .multipleChoice, .fillInBlank, .listening: return .green
+        case .practice, .multipleChoice, .fillInBlank, .listening, .trueFalse: return .green
         }
     }
 
@@ -384,6 +385,7 @@ struct SessionHistoryRow: View {
         case .multipleChoice: return "选择题"
         case .fillInBlank: return "填空题"
         case .listening: return "听力"
+        case .trueFalse: return "判断题"
         }
     }
 

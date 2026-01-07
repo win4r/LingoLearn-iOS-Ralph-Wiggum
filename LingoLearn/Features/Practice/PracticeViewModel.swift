@@ -12,6 +12,16 @@ struct TestQuestion {
     let word: Word
     let options: [String]
     let correctAnswer: String
+    let statement: String?
+    let correctBoolAnswer: Bool?
+
+    init(word: Word, options: [String], correctAnswer: String, statement: String? = nil, correctBoolAnswer: Bool? = nil) {
+        self.word = word
+        self.options = options
+        self.correctAnswer = correctAnswer
+        self.statement = statement
+        self.correctBoolAnswer = correctBoolAnswer
+    }
 }
 
 struct WrongAnswer {
@@ -68,6 +78,8 @@ class PracticeViewModel {
             generateFillInBlankQuestions(from: words)
         case .listening:
             generateListeningQuestions(from: words)
+        case .trueFalse:
+            generateTrueFalseQuestions(from: words)
         default:
             break
         }
@@ -110,6 +122,31 @@ class PracticeViewModel {
             options.shuffle()
 
             return TestQuestion(word: word, options: options, correctAnswer: correctAnswer)
+        }
+    }
+
+    private func generateTrueFalseQuestions(from words: [Word]) {
+        questions = words.map { word in
+            let isCorrectTranslation = Bool.random()
+            let statement: String
+            let correctBoolAnswer: Bool
+
+            if isCorrectTranslation {
+                statement = "\(word.english) / \(word.chinese)"
+                correctBoolAnswer = true
+            } else {
+                let wrongWord = words.filter { $0.english != word.english }.randomElement() ?? word
+                statement = "\(word.english) / \(wrongWord.chinese)"
+                correctBoolAnswer = false
+            }
+
+            return TestQuestion(
+                word: word,
+                options: ["True", "False"],
+                correctAnswer: correctBoolAnswer ? "True" : "False",
+                statement: statement,
+                correctBoolAnswer: correctBoolAnswer
+            )
         }
     }
 

@@ -68,6 +68,13 @@ struct PracticeMenuView: View {
             title: "听力题",
             description: "听发音选择正确的单词",
             color: .orange
+        ),
+        TestType(
+            id: .trueFalse,
+            icon: "checkmark.circle.fill",
+            title: "判断题",
+            description: "判断中文翻译是否正确",
+            color: .purple
         )
     ]
 
@@ -596,6 +603,9 @@ struct TestViewRouter: View {
                 .environment(\.modelContext, modelContext)
         case .listening:
             ListeningTestView(wordCount: wordCount, category: category)
+                .environment(\.modelContext, modelContext)
+        case .trueFalse:
+            TrueFalseView(wordCount: wordCount, category: category)
                 .environment(\.modelContext, modelContext)
         default:
             Text("Test type not implemented")
