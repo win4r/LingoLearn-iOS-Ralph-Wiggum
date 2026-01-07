@@ -34,7 +34,19 @@ struct LingoLearnApp: App {
                 .onAppear {
                     // Seed data on first launch
                     DataSeederService.seedDataIfNeeded(modelContext: sharedModelContainer.mainContext)
+                    // Sync user preferences on launch
+                    syncUserPreferences()
+                    // Setup notification categories for quick actions
+                    NotificationService.shared.setupCategories()
                 }
+        }
+    }
+
+    private func syncUserPreferences() {
+        let descriptor = FetchDescriptor<UserSettings>()
+        if let settings = try? sharedModelContainer.mainContext.fetch(descriptor).first {
+            HapticManager.shared.isEnabled = settings.hapticsEnabled
+            SoundService.shared.isEnabled = settings.soundEnabled
         }
     }
 }

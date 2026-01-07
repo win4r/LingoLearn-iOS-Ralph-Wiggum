@@ -97,6 +97,7 @@ class AchievementService {
         // Save if there are new achievements
         if !newlyUnlocked.isEmpty {
             try? modelContext.save()
+            SoundService.shared.playLevelUp()
         }
 
         return newlyUnlocked
@@ -142,6 +143,7 @@ class AchievementService {
 
         if !newlyUnlocked.isEmpty {
             try? modelContext.save()
+            SoundService.shared.playLevelUp()
         }
 
         return newlyUnlocked

@@ -49,6 +49,14 @@ struct DailyProgressCard: View {
         }
     }
 
+    private var accessibilityDescription: String {
+        if let progress = progress, let goal = dailyGoal {
+            let percentage = Int(progressPercentage * 100)
+            return "今日进度\(percentage)%,已学习\(progress.wordsLearned)个,已复习\(progress.wordsReviewed)个,目标\(goal)个,学习时长\(Int(progress.totalStudyTime / 60))分钟,\(motivationalMessage)"
+        }
+        return "今日进度,开始今天的学习吧"
+    }
+
     var body: some View {
         VStack(spacing: 20) {
             // Header
@@ -200,6 +208,8 @@ struct DailyProgressCard: View {
         .onAppear {
             playEntryAnimation()
         }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(accessibilityDescription)
         .onChange(of: progressPercentage) { oldValue, newValue in
             withAnimation(.easeOut(duration: 0.5)) {
                 animatedProgress = newValue

@@ -34,14 +34,24 @@ class SettingsViewModel {
     }
 
     var soundEnabled: Bool = true {
-        didSet { saveSettings() }
+        didSet {
+            saveSettings()
+            SoundService.shared.isEnabled = soundEnabled
+        }
     }
 
     var hapticsEnabled: Bool = true {
-        didSet { saveSettings() }
+        didSet {
+            saveSettings()
+            HapticManager.shared.isEnabled = hapticsEnabled
+        }
     }
 
     var autoPlayPronunciation: Bool = true {
+        didSet { saveSettings() }
+    }
+
+    var speechRate: SpeechRate = .normal {
         didSet { saveSettings() }
     }
 
@@ -66,6 +76,7 @@ class SettingsViewModel {
             soundEnabled = existingSettings.soundEnabled
             hapticsEnabled = existingSettings.hapticsEnabled
             autoPlayPronunciation = existingSettings.autoPlayPronunciation
+            speechRate = existingSettings.speechRate
             appearanceMode = existingSettings.appearanceMode
         } else {
             // Create default settings
@@ -84,6 +95,8 @@ class SettingsViewModel {
         }
 
         applyAppearanceMode()
+        HapticManager.shared.isEnabled = hapticsEnabled
+        SoundService.shared.isEnabled = soundEnabled
     }
 
     private func saveSettings() {
@@ -95,6 +108,7 @@ class SettingsViewModel {
         settings.soundEnabled = soundEnabled
         settings.hapticsEnabled = hapticsEnabled
         settings.autoPlayPronunciation = autoPlayPronunciation
+        settings.speechRate = speechRate
         settings.appearanceMode = appearanceMode
 
         try? modelContext.save()

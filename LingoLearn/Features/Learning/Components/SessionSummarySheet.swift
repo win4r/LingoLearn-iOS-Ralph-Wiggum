@@ -9,12 +9,16 @@ import SwiftUI
 
 struct SessionSummarySheet: View {
     let stats: SessionStats
+    var newlyUnlockedAchievements: [Achievement] = []
+    var dailyGoalReached: Bool = false
     let onContinue: () -> Void
     let onHome: () -> Void
 
     @Environment(\.dismiss) private var dismiss
     @State private var iconScale: CGFloat = 0.5
     @State private var showStats = false
+    @State private var showAchievements = false
+    @State private var showGoalCelebration = false
     @State private var showButtons = false
     @State private var showConfetti = false
     @State private var glowOpacity: Double = 0
@@ -150,10 +154,60 @@ struct SessionSummarySheet: View {
                             showProgress: true,
                             progress: stats.accuracy
                         )
+
+                        HStack(spacing: 14) {
+                            SummaryStatCard(
+                                icon: "clock.fill",
+                                title: "学习时长",
+                                value: stats.formattedDuration,
+                                color: .purple
+                            )
+
+                            SummaryStatCard(
+                                icon: "hare.fill",
+                                title: "学习速度",
+                                value: String(format: "%.1f/分钟", stats.wordsPerMinute),
+                                color: .cyan
+                            )
+                        }
                     }
                     .padding(.horizontal)
                     .opacity(showStats ? 1 : 0)
                     .offset(y: showStats ? 0 : 20)
+
+                    // Achievement Unlocks
+                    if !newlyUnlockedAchievements.isEmpty {
+                        VStack(spacing: 12) {
+                            HStack {
+                                Image(systemName: "trophy.fill")
+                                    .foregroundStyle(
+                                        LinearGradient(
+                                            colors: [.yellow, .orange],
+                                            startPoint: .top,
+                                            endPoint: .bottom
+                                        )
+                                    )
+                                Text("新成就解锁！")
+                                    .font(.headline)
+                                    .fontWeight(.bold)
+                            }
+
+                            ForEach(newlyUnlockedAchievements) { achievement in
+                                AchievementUnlockCard(achievement: achievement)
+                            }
+                        }
+                        .padding(.horizontal)
+                        .opacity(showAchievements ? 1 : 0)
+                        .offset(y: showAchievements ? 0 : 20)
+                    }
+
+                    // Daily Goal Celebration
+                    if dailyGoalReached {
+                        DailyGoalCelebrationCard()
+                            .padding(.horizontal)
+                            .opacity(showGoalCelebration ? 1 : 0)
+                            .offset(y: showGoalCelebration ? 0 : 20)
+                    }
 
                     Spacer()
 
@@ -246,7 +300,7 @@ struct SessionSummarySheet: View {
 
         // Haptic feedback
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-            if isExcellent {
+            if isExcellent || dailyGoalReached {
                 HapticManager.shared.success()
                 showConfetti = true
             } else {
@@ -259,9 +313,285 @@ struct SessionSummarySheet: View {
             showStats = true
         }
 
+        var currentDelay = 0.6
+
+        // Achievements animation
+        if !newlyUnlockedAchievements.isEmpty {
+            withAnimation(.easeOut(duration: 0.4).delay(currentDelay)) {
+                showAchievements = true
+            }
+            // Extra confetti for achievements
+            DispatchQueue.main.asyncAfter(deadline: .now() + currentDelay) {
+                showConfetti = true
+            }
+            currentDelay += 0.2
+        }
+
+        // Daily goal celebration animation
+        if dailyGoalReached {
+            withAnimation(.easeOut(duration: 0.4).delay(currentDelay)) {
+                showGoalCelebration = true
+            }
+            // Extra confetti for goal achievement
+            DispatchQueue.main.asyncAfter(deadline: .now() + currentDelay) {
+                showConfetti = true
+                HapticManager.shared.success()
+            }
+            currentDelay += 0.2
+        }
+
         // Buttons animation
-        withAnimation(.easeOut(duration: 0.4).delay(0.6)) {
+        withAnimation(.easeOut(duration: 0.4).delay(currentDelay)) {
             showButtons = true
+        }
+    }
+}
+
+// MARK: - Daily Goal Celebration Card
+
+private struct DailyGoalCelebrationCard: View {
+    @State private var appeared = false
+    @State private var glowPulse = false
+    @State private var starRotation: Double = 0
+
+    var body: some View {
+        HStack(spacing: 14) {
+            ZStack {
+                // Glow effect
+                Circle()
+                    .fill(
+                        RadialGradient(
+                            colors: [.green.opacity(0.4), .clear],
+                            center: .center,
+                            startRadius: 10,
+                            endRadius: 35
+                        )
+                    )
+                    .frame(width: 60, height: 60)
+                    .scaleEffect(glowPulse ? 1.3 : 1.0)
+                    .opacity(glowPulse ? 0.3 : 0.7)
+
+                Circle()
+                    .fill(
+                        LinearGradient(
+                            colors: [.green.opacity(0.2), .mint.opacity(0.15)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .frame(width: 52, height: 52)
+
+                Image(systemName: "flag.checkered.2.crossed")
+                    .font(.title2)
+                    .foregroundStyle(
+                        LinearGradient(
+                            colors: [.green, .mint],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+                    .symbolEffect(.bounce, value: appeared)
+            }
+
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 6) {
+                    Text("🎉")
+                        .font(.headline)
+                    Text("今日目标已完成！")
+                        .font(.headline)
+                        .fontWeight(.bold)
+                        .foregroundStyle(
+                            LinearGradient(
+                                colors: [.green, .mint],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
+                        )
+                }
+
+                Text("坚持学习，你做得很棒！")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer()
+
+            // Star decoration
+            ZStack {
+                ForEach(0..<3, id: \.self) { i in
+                    Image(systemName: "star.fill")
+                        .font(.caption)
+                        .foregroundStyle(
+                            LinearGradient(
+                                colors: [.yellow, .orange],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
+                        )
+                        .offset(
+                            x: CGFloat(i - 1) * 12,
+                            y: i == 1 ? -8 : 0
+                        )
+                        .scaleEffect(i == 1 ? 1.2 : 0.8)
+                }
+            }
+            .rotationEffect(.degrees(starRotation))
+        }
+        .padding(16)
+        .background(
+            ZStack {
+                RoundedRectangle(cornerRadius: 16)
+                    .fill(Color(.systemBackground))
+
+                RoundedRectangle(cornerRadius: 16)
+                    .fill(
+                        LinearGradient(
+                            colors: [.green.opacity(0.12), .mint.opacity(0.06)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+            }
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 16)
+                .stroke(
+                    LinearGradient(
+                        colors: [.green.opacity(0.4), .mint.opacity(0.3)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ),
+                    lineWidth: 2
+                )
+        )
+        .shadow(color: .green.opacity(0.2), radius: 10, y: 5)
+        .scaleEffect(appeared ? 1 : 0.8)
+        .onAppear {
+            withAnimation(.spring(response: 0.5, dampingFraction: 0.6)) {
+                appeared = true
+            }
+            withAnimation(.easeInOut(duration: 1.2).repeatForever(autoreverses: true)) {
+                glowPulse = true
+            }
+            withAnimation(.linear(duration: 4).repeatForever(autoreverses: false)) {
+                starRotation = 15
+            }
+        }
+    }
+}
+
+// MARK: - Achievement Unlock Card
+
+private struct AchievementUnlockCard: View {
+    let achievement: Achievement
+
+    @State private var appeared = false
+    @State private var glowPulse = false
+
+    var body: some View {
+        HStack(spacing: 14) {
+            ZStack {
+                // Glow effect
+                Circle()
+                    .fill(
+                        RadialGradient(
+                            colors: [.yellow.opacity(0.4), .clear],
+                            center: .center,
+                            startRadius: 10,
+                            endRadius: 30
+                        )
+                    )
+                    .frame(width: 56, height: 56)
+                    .scaleEffect(glowPulse ? 1.2 : 1.0)
+                    .opacity(glowPulse ? 0.3 : 0.6)
+
+                Circle()
+                    .fill(
+                        LinearGradient(
+                            colors: [.yellow.opacity(0.2), .orange.opacity(0.15)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .frame(width: 48, height: 48)
+
+                Image(systemName: achievement.iconName)
+                    .font(.title2)
+                    .foregroundStyle(
+                        LinearGradient(
+                            colors: [.yellow, .orange],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+                    .symbolEffect(.bounce, value: appeared)
+            }
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(achievement.title)
+                    .font(.headline)
+                    .fontWeight(.bold)
+                    .foregroundStyle(
+                        LinearGradient(
+                            colors: [.primary, .primary.opacity(0.8)],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                    )
+
+                Text(achievement.description)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer()
+
+            Image(systemName: "checkmark.circle.fill")
+                .font(.title2)
+                .foregroundStyle(
+                    LinearGradient(
+                        colors: [.green, .mint],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                )
+        }
+        .padding(14)
+        .background(
+            ZStack {
+                RoundedRectangle(cornerRadius: 14)
+                    .fill(Color(.systemBackground))
+
+                RoundedRectangle(cornerRadius: 14)
+                    .fill(
+                        LinearGradient(
+                            colors: [.yellow.opacity(0.1), .orange.opacity(0.05)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+            }
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 14)
+                .stroke(
+                    LinearGradient(
+                        colors: [.yellow.opacity(0.3), .orange.opacity(0.2)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ),
+                    lineWidth: 1.5
+                )
+        )
+        .shadow(color: .orange.opacity(0.15), radius: 8, y: 4)
+        .scaleEffect(appeared ? 1 : 0.8)
+        .onAppear {
+            withAnimation(.spring(response: 0.5, dampingFraction: 0.6)) {
+                appeared = true
+            }
+            withAnimation(.easeInOut(duration: 1.0).repeatForever(autoreverses: true)) {
+                glowPulse = true
+            }
         }
     }
 }
@@ -452,9 +782,30 @@ struct SessionStatCard: View {
     }
 }
 
-#Preview {
+#Preview("Without Achievements") {
     SessionSummarySheet(
         stats: SessionStats(totalReviewed: 20, knownCount: 15, unknownCount: 5),
+        onContinue: {},
+        onHome: {}
+    )
+}
+
+#Preview("With Achievements") {
+    SessionSummarySheet(
+        stats: SessionStats(totalReviewed: 20, knownCount: 20, unknownCount: 0),
+        newlyUnlockedAchievements: [
+            Achievement(id: "perfect_session", title: "完美练习", description: "一次练习全部正确", iconName: "checkmark.seal.fill"),
+            Achievement(id: "first_word", title: "初次学习", description: "学习第一个单词", iconName: "star.fill")
+        ],
+        onContinue: {},
+        onHome: {}
+    )
+}
+
+#Preview("Daily Goal Reached") {
+    SessionSummarySheet(
+        stats: SessionStats(totalReviewed: 20, knownCount: 18, unknownCount: 2),
+        dailyGoalReached: true,
         onContinue: {},
         onHome: {}
     )

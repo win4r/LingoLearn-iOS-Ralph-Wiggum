@@ -12,6 +12,7 @@ struct LearningProgressView: View {
     @Environment(\.modelContext) private var modelContext
     @State private var viewModel: ProgressViewModel?
     @State private var selectedPeriod: TimePeriod = .week
+    @State private var showShareSheet = false
 
     enum TimePeriod: String, CaseIterable {
         case week = "7天"
@@ -38,6 +39,11 @@ struct LearningProgressView: View {
                     // Stats Cards
                     statsCardsSection
 
+                    // Recent Sessions
+                    if let vm = viewModel, !vm.recentSessions.isEmpty {
+                        sessionHistorySection
+                    }
+
                     // Line Chart
                     lineChartSection
 
@@ -53,13 +59,77 @@ struct LearningProgressView: View {
                 .padding(.vertical)
             }
             .navigationTitle("学习进度")
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    ShareLink(item: generateProgressSummary()) {
+                        Image(systemName: "square.and.arrow.up")
+                    }
+                }
+            }
             .onAppear {
                 if viewModel == nil {
                     viewModel = ProgressViewModel(modelContext: modelContext)
                 }
                 viewModel?.loadData()
             }
+            .refreshable {
+                viewModel?.loadData()
+            }
         }
+    }
+
+    private func generateProgressSummary() -> String {
+        guard let vm = viewModel else {
+            return "LingoLearn - 我的学习进度"
+        }
+
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "yyyy年M月d日"
+        let today = dateFormatter.string(from: Date())
+
+        var summary = """
+        📚 LingoLearn 学习报告
+        📅 \(today)
+
+        🔥 连续学习: \(vm.currentStreak)天
+        ⭐ 最长记录: \(vm.longestStreak)天
+        📖 已学词汇: \(vm.totalWordsLearned)个
+        ⏱️ 总学习时长: \(vm.formattedTotalStudyTime)
+
+        📊 掌握情况:
+        """
+
+        let total = (vm.newCount) + (vm.learningCount) + (vm.reviewingCount) + (vm.masteredCount)
+        if total > 0 {
+            let masteryRate = Double(vm.masteredCount) / Double(total) * 100
+            summary += """
+
+        • 新词: \(vm.newCount)个
+        • 学习中: \(vm.learningCount)个
+        • 复习中: \(vm.reviewingCount)个
+        • 已掌握: \(vm.masteredCount)个
+        • 掌握率: \(String(format: "%.1f", masteryRate))%
+        """
+        }
+
+        // Add achievements
+        let unlockedCount = vm.unlockedAchievements.count
+        if unlockedCount > 0 {
+            summary += """
+
+
+        🏆 已解锁成就: \(unlockedCount)个
+        """
+        }
+
+        summary += """
+
+
+        ——
+        使用 LingoLearn 学习英语词汇
+        """
+
+        return summary
     }
 
     private var statsCardsSection: some View {
@@ -245,6 +315,163 @@ struct LearningProgressView: View {
             .shadow(color: .yellow.opacity(0.08), radius: 8, y: 4)
             .padding(.horizontal)
         }
+    }
+
+    private var sessionHistorySection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            ProgressSectionHeader(title: "最近学习", icon: "clock.arrow.circlepath", color: .cyan)
+                .padding(.horizontal)
+
+            VStack(spacing: 8) {
+                ForEach(viewModel?.recentSessions ?? []) { session in
+                    SessionHistoryRow(session: session)
+                }
+            }
+            .padding()
+            .background(
+                ZStack {
+                    RoundedRectangle(cornerRadius: 14)
+                        .fill(Color(.systemBackground))
+                    RoundedRectangle(cornerRadius: 14)
+                        .fill(
+                            LinearGradient(
+                                colors: [.cyan.opacity(0.05), .blue.opacity(0.02)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                }
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 14)
+                    .stroke(Color.cyan.opacity(0.1), lineWidth: 1)
+            )
+            .shadow(color: .cyan.opacity(0.08), radius: 8, y: 4)
+            .padding(.horizontal)
+        }
+    }
+}
+
+// MARK: - Session History Row
+
+struct SessionHistoryRow: View {
+    let session: StudySession
+
+    private var sessionTypeIcon: String {
+        switch session.sessionType {
+        case .learning: return "book.fill"
+        case .review: return "arrow.clockwise"
+        case .practice: return "gamecontroller.fill"
+        case .multipleChoice: return "list.bullet.rectangle"
+        case .fillInBlank: return "character.cursor.ibeam"
+        case .listening: return "headphones"
+        }
+    }
+
+    private var sessionTypeColor: Color {
+        switch session.sessionType {
+        case .learning: return .blue
+        case .review: return .purple
+        case .practice, .multipleChoice, .fillInBlank, .listening: return .green
+        }
+    }
+
+    private var sessionTypeName: String {
+        switch session.sessionType {
+        case .learning: return "学习"
+        case .review: return "复习"
+        case .practice: return "练习"
+        case .multipleChoice: return "选择题"
+        case .fillInBlank: return "填空题"
+        case .listening: return "听力"
+        }
+    }
+
+    private var formattedDuration: String {
+        let minutes = Int(session.duration) / 60
+        let seconds = Int(session.duration) % 60
+        if minutes > 0 {
+            return "\(minutes)分\(seconds)秒"
+        }
+        return "\(seconds)秒"
+    }
+
+    private var formattedDate: String {
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .abbreviated
+        formatter.locale = Locale(identifier: "zh_CN")
+        return formatter.localizedString(for: session.date, relativeTo: Date())
+    }
+
+    private var accuracy: Double {
+        guard session.wordsStudied > 0 else { return 0 }
+        return Double(session.wordsCorrect) / Double(session.wordsStudied)
+    }
+
+    var body: some View {
+        HStack(spacing: 12) {
+            // Icon
+            ZStack {
+                Circle()
+                    .fill(
+                        LinearGradient(
+                            colors: [sessionTypeColor.opacity(0.15), sessionTypeColor.opacity(0.08)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .frame(width: 40, height: 40)
+
+                Image(systemName: sessionTypeIcon)
+                    .font(.body)
+                    .foregroundStyle(
+                        LinearGradient(
+                            colors: [sessionTypeColor, sessionTypeColor.opacity(0.7)],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+            }
+
+            // Details
+            VStack(alignment: .leading, spacing: 4) {
+                HStack {
+                    Text(sessionTypeName)
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+
+                    Spacer()
+
+                    Text(formattedDate)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                HStack(spacing: 12) {
+                    Label("\(session.wordsStudied)词", systemImage: "textformat")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
+                    Label(formattedDuration, systemImage: "clock")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
+                    Spacer()
+
+                    // Accuracy indicator
+                    HStack(spacing: 4) {
+                        Circle()
+                            .fill(accuracy >= 0.8 ? Color.green : (accuracy >= 0.6 ? Color.orange : Color.red))
+                            .frame(width: 6, height: 6)
+                        Text(String(format: "%.0f%%", accuracy * 100))
+                            .font(.caption)
+                            .fontWeight(.medium)
+                            .foregroundStyle(accuracy >= 0.8 ? .green : (accuracy >= 0.6 ? .orange : .red))
+                    }
+                }
+            }
+        }
+        .padding(.vertical, 6)
     }
 }
 

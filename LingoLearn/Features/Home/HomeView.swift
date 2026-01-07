@@ -15,7 +15,14 @@ struct HomeView: View {
     @State private var navigateToReview = false
     @State private var navigateToRandomTest = false
     @State private var randomTestType: SessionType = .multipleChoice
+    @State private var showLearningSetup = false
+    @State private var showReviewSetup = false
+    @State private var selectedCategory: WordCategory? = nil
     @State private var showGreeting = false
+    @State private var showMilestoneCelebration = false
+    @State private var currentMilestone = 0
+    @State private var showGoalCelebration = false
+    @State private var hasShownGoalCelebrationToday = false
 
     private var timeBasedGreeting: String {
         let hour = Calendar.current.component(.hour, from: Date())
@@ -54,8 +61,25 @@ struct HomeView: View {
             ScrollView {
                 VStack(spacing: 24) {
                     headerSection
+                    studyReminderSection
                     dailyProgressSection
                     streakSection
+                    streakFreezeSection
+                    weeklyGoalsSection
+                    quickStatsSection
+                    difficultWordsSection
+                    learningPatternsSection
+                    studyRecommendationsSection
+                    vocabularyInsightsSection
+                    reviewForecastSection
+                    wordRootSection
+                    quickReviewWidgetSection
+                    wordOfDaySection
+                    smartReviewSection
+                    favoriteWordsSection
+                    recentNotesSection
+                    pomodoroTimerSection
+                    dailyTipSection
                     reviewBadgeSection
                     quickActionsSection
                     Spacer(minLength: 20)
@@ -79,15 +103,63 @@ struct HomeView: View {
                 }
             }
             .navigationDestination(isPresented: $navigateToLearning) {
-                FlashcardView(mode: .learning)
+                FlashcardView(mode: .learning, categoryFilter: selectedCategory)
             }
             .navigationDestination(isPresented: $navigateToReview) {
-                FlashcardView(mode: .review)
+                FlashcardView(mode: .review, categoryFilter: selectedCategory)
+            }
+            .sheet(isPresented: $showLearningSetup) {
+                LearningSetupSheet(mode: .learning) { category in
+                    selectedCategory = category
+                    navigateToLearning = true
+                }
+            }
+            .sheet(isPresented: $showReviewSetup) {
+                LearningSetupSheet(mode: .review) { category in
+                    selectedCategory = category
+                    navigateToReview = true
+                }
             }
             .navigationDestination(isPresented: $navigateToRandomTest) {
                 TestViewRouter(testType: randomTestType, wordCount: 10, category: .all)
             }
+            .onChange(of: viewModel?.showMilestoneCelebration) { _, newValue in
+                if let showCelebration = newValue, showCelebration {
+                    currentMilestone = viewModel?.currentMilestone ?? 0
+                    showMilestoneCelebration = true
+                }
+            }
+            .onChange(of: showMilestoneCelebration) { _, newValue in
+                if !newValue {
+                    viewModel?.dismissMilestoneCelebration()
+                }
+            }
         }
+        .milestoneCelebration(isShowing: $showMilestoneCelebration, milestone: currentMilestone)
+        .goalCelebration(isShowing: $showGoalCelebration)
+        .onChange(of: viewModel?.progressPercentage) { oldValue, newValue in
+            // Check if goal was just reached
+            if let newPercent = newValue, let oldPercent = oldValue,
+               newPercent >= 1.0 && oldPercent < 1.0 && !hasShownGoalCelebrationToday {
+                hasShownGoalCelebrationToday = true
+                showGoalCelebration = true
+                saveGoalCelebrationShown()
+            }
+        }
+        .onAppear {
+            checkIfGoalCelebrationShownToday()
+        }
+    }
+
+    private func checkIfGoalCelebrationShownToday() {
+        let key = "goalCelebrationDate"
+        if let lastDate = UserDefaults.standard.object(forKey: key) as? Date {
+            hasShownGoalCelebrationToday = Calendar.current.isDateInToday(lastDate)
+        }
+    }
+
+    private func saveGoalCelebrationShown() {
+        UserDefaults.standard.set(Date(), forKey: "goalCelebrationDate")
     }
 
     // MARK: - Actions
@@ -204,6 +276,15 @@ struct HomeView: View {
     }
 
     @ViewBuilder
+    private var studyReminderSection: some View {
+        if let vm = viewModel {
+            StudyReminderCard(lastStudyDate: vm.userStats?.lastStudyDate) {
+                showLearningSetup = true
+            }
+        }
+    }
+
+    @ViewBuilder
     private var dailyProgressSection: some View {
         if let vm = viewModel {
             DailyProgressCard(
@@ -219,9 +300,76 @@ struct HomeView: View {
         if let vm = viewModel, let stats = vm.userStats {
             StreakCard(
                 currentStreak: stats.currentStreak,
-                longestStreak: stats.longestStreak
+                longestStreak: stats.longestStreak,
+                studiedDates: vm.studiedDates
             )
         }
+    }
+
+    private var streakFreezeSection: some View {
+        StreakFreezeCard()
+    }
+
+    private var weeklyGoalsSection: some View {
+        WeeklyGoalsCard()
+    }
+
+    private var quickStatsSection: some View {
+        QuickStatsCard()
+    }
+
+    private var difficultWordsSection: some View {
+        DifficultWordsCard()
+    }
+
+    private var learningPatternsSection: some View {
+        LearningPatternsCard()
+    }
+
+    private var studyRecommendationsSection: some View {
+        StudyRecommendationsCard()
+    }
+
+    private var vocabularyInsightsSection: some View {
+        VocabularyInsightsCard()
+    }
+
+    private var reviewForecastSection: some View {
+        ReviewForecastCard()
+    }
+
+    private var wordRootSection: some View {
+        WordRootCard()
+    }
+
+    private var quickReviewWidgetSection: some View {
+        QuickReviewWidget()
+    }
+
+    private var wordOfDaySection: some View {
+        WordOfDayCard()
+    }
+
+    private var smartReviewSection: some View {
+        SmartReviewCard {
+            navigateToReview = true
+        }
+    }
+
+    private var favoriteWordsSection: some View {
+        FavoriteWordsCard()
+    }
+
+    private var recentNotesSection: some View {
+        RecentNotesCard()
+    }
+
+    private var pomodoroTimerSection: some View {
+        PomodoroTimerCard()
+    }
+
+    private var dailyTipSection: some View {
+        DailyTipCard()
     }
 
     @ViewBuilder
@@ -288,7 +436,7 @@ struct HomeView: View {
                     subtitle: "学习新单词",
                     color: .blue
                 ) {
-                    navigateToLearning = true
+                    showLearningSetup = true
                 }
 
                 QuickActionButton(
@@ -297,7 +445,7 @@ struct HomeView: View {
                     subtitle: "复习已学单词",
                     color: .purple
                 ) {
-                    navigateToReview = true
+                    showReviewSetup = true
                 }
 
                 QuickActionButton(

@@ -66,6 +66,49 @@ enum WordListFilter {
         }
     }
 
+    enum Difficulty: CaseIterable {
+        case all
+        case easy      // 1-2 stars
+        case medium    // 3 stars
+        case hard      // 4-5 stars
+
+        var displayName: String {
+            switch self {
+            case .all: return "全部难度"
+            case .easy: return "简单"
+            case .medium: return "中等"
+            case .hard: return "困难"
+            }
+        }
+
+        var color: Color {
+            switch self {
+            case .all: return .accentColor
+            case .easy: return .green
+            case .medium: return .orange
+            case .hard: return .red
+            }
+        }
+
+        var icon: String {
+            switch self {
+            case .all: return "slider.horizontal.3"
+            case .easy: return "star"
+            case .medium: return "star.leadinghalf.filled"
+            case .hard: return "star.fill"
+            }
+        }
+
+        func matches(difficulty: Int) -> Bool {
+            switch self {
+            case .all: return true
+            case .easy: return difficulty <= 2
+            case .medium: return difficulty == 3
+            case .hard: return difficulty >= 4
+            }
+        }
+    }
+
     enum SortOption: CaseIterable {
         case alphabetical
         case alphabeticalReverse
@@ -101,6 +144,10 @@ import SwiftUI
 class WordListViewModel {
     private let modelContext: ModelContext
     private var allWords: [Word] = []
+    private static let recentSearchesKey = "recentWordSearches"
+    private static let maxRecentSearches = 5
+
+    var recentSearches: [String] = []
 
     var searchText: String = "" {
         didSet {
@@ -115,6 +162,12 @@ class WordListViewModel {
     }
 
     var selectedMastery: WordListFilter.Mastery = .all {
+        didSet {
+            filterWords()
+        }
+    }
+
+    var selectedDifficulty: WordListFilter.Difficulty = .all {
         didSet {
             filterWords()
         }
@@ -137,6 +190,9 @@ class WordListViewModel {
     var learningCount: Int { allWords.filter { $0.masteryLevel == .learning }.count }
     var reviewingCount: Int { allWords.filter { $0.masteryLevel == .reviewing }.count }
     var masteredCount: Int { allWords.filter { $0.masteryLevel == .mastered }.count }
+    var easyCount: Int { allWords.filter { $0.difficulty <= 2 }.count }
+    var mediumCount: Int { allWords.filter { $0.difficulty == 3 }.count }
+    var hardCount: Int { allWords.filter { $0.difficulty >= 4 }.count }
 
     func countFor(category: WordListFilter.Category) -> Int {
         switch category {
@@ -157,9 +213,54 @@ class WordListViewModel {
         }
     }
 
+    func countFor(difficulty: WordListFilter.Difficulty) -> Int {
+        switch difficulty {
+        case .all: return totalCount
+        case .easy: return easyCount
+        case .medium: return mediumCount
+        case .hard: return hardCount
+        }
+    }
+
     init(modelContext: ModelContext) {
         self.modelContext = modelContext
+        loadRecentSearches()
         loadAllWords()
+    }
+
+    // MARK: - Recent Searches
+
+    private func loadRecentSearches() {
+        recentSearches = UserDefaults.standard.stringArray(forKey: Self.recentSearchesKey) ?? []
+    }
+
+    func addToRecentSearches(_ query: String) {
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+
+        // Remove if already exists (to move to front)
+        recentSearches.removeAll { $0.lowercased() == trimmed.lowercased() }
+
+        // Insert at beginning
+        recentSearches.insert(trimmed, at: 0)
+
+        // Keep only max items
+        if recentSearches.count > Self.maxRecentSearches {
+            recentSearches = Array(recentSearches.prefix(Self.maxRecentSearches))
+        }
+
+        // Save to UserDefaults
+        UserDefaults.standard.set(recentSearches, forKey: Self.recentSearchesKey)
+    }
+
+    func removeRecentSearch(_ query: String) {
+        recentSearches.removeAll { $0 == query }
+        UserDefaults.standard.set(recentSearches, forKey: Self.recentSearchesKey)
+    }
+
+    func clearRecentSearches() {
+        recentSearches.removeAll()
+        UserDefaults.standard.removeObject(forKey: Self.recentSearchesKey)
     }
 
     private func loadAllWords() {
@@ -171,7 +272,7 @@ class WordListViewModel {
             allWords = try modelContext.fetch(descriptor)
             filterWords()
         } catch {
-            print("Error loading words: \(error)")
+            AppLogger.logError("Failed to load words", error: error, category: AppLogger.data)
             allWords = []
             filteredWords = []
         }
@@ -195,6 +296,11 @@ class WordListViewModel {
         // Apply mastery filter
         if let masteryLevel = selectedMastery.masteryLevel {
             result = result.filter { $0.masteryLevel == masteryLevel }
+        }
+
+        // Apply difficulty filter
+        if selectedDifficulty != .all {
+            result = result.filter { selectedDifficulty.matches(difficulty: $0.difficulty) }
         }
 
         // Apply search filter
@@ -247,7 +353,7 @@ class WordListViewModel {
             try modelContext.save()
             filterWords() // Re-filter in case we're viewing favorites
         } catch {
-            print("Error saving favorite: \(error)")
+            AppLogger.logError("Failed to save favorite", error: error, category: AppLogger.data)
         }
     }
 }

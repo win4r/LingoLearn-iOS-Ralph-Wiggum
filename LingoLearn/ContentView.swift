@@ -7,6 +7,7 @@
 
 import SwiftUI
 import SwiftData
+import Combine
 
 struct ContentView: View {
     @Environment(\.modelContext) private var modelContext
@@ -15,6 +16,7 @@ struct ContentView: View {
     @State private var selectedTab = 0
     @State private var showOnboarding = false
     @State private var previousTab = 0
+    @State private var showReviewFromNotification = false
 
     private var settings: UserSettings? {
         settingsArray.first
@@ -65,28 +67,68 @@ struct ContentView: View {
                 .badge(wordsDueForReview > 0 ? "\(min(wordsDueForReview, 99))" : nil)
                 .tag(1)
 
-            PracticeMenuView()
+            WordListView()
                 .tabItem {
-                    Label("练习", systemImage: selectedTab == 2 ? "gamecontroller.fill" : "gamecontroller")
+                    Label("词库", systemImage: selectedTab == 2 ? "text.book.closed.fill" : "text.book.closed")
                 }
                 .tag(2)
 
-            LearningProgressView()
+            PracticeMenuView()
                 .tabItem {
-                    Label("进度", systemImage: selectedTab == 3 ? "chart.bar.fill" : "chart.bar")
+                    Label("练习", systemImage: selectedTab == 3 ? "gamecontroller.fill" : "gamecontroller")
                 }
                 .tag(3)
 
-            SettingsView()
+            LearningProgressView()
                 .tabItem {
-                    Label("设置", systemImage: selectedTab == 4 ? "gearshape.fill" : "gearshape")
+                    Label("进度", systemImage: selectedTab == 4 ? "chart.bar.fill" : "chart.bar")
                 }
                 .tag(4)
+
+            SettingsView()
+                .tabItem {
+                    Label("设置", systemImage: selectedTab == 5 ? "gearshape.fill" : "gearshape")
+                }
+                .tag(5)
         }
         .tint(.primaryBlue)
         .onChange(of: selectedTab) { oldValue, newValue in
             HapticManager.shared.selection()
             previousTab = oldValue
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)) { _ in
+            handlePendingNotificationAction()
+        }
+        .fullScreenCover(isPresented: $showReviewFromNotification) {
+            NavigationStack {
+                FlashcardView(mode: .review)
+                    .toolbar {
+                        ToolbarItem(placement: .navigationBarLeading) {
+                            Button("关闭") {
+                                showReviewFromNotification = false
+                            }
+                        }
+                    }
+            }
+        }
+    }
+
+    private func handlePendingNotificationAction() {
+        guard let action = NotificationService.shared.pendingAction else { return }
+
+        // Clear the pending action
+        NotificationService.shared.clearPendingAction()
+
+        switch action {
+        case .startLearning:
+            // Navigate to learning tab
+            selectedTab = 1
+            SoundService.shared.playTap()
+
+        case .quickReview:
+            // Show review mode in full screen cover
+            showReviewFromNotification = true
+            SoundService.shared.playTap()
         }
     }
 

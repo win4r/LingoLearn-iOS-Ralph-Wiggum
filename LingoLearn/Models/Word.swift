@@ -39,6 +39,9 @@ final class Word {
     var lastStudiedDate: Date?
     var dateAdded: Date
 
+    // Personal Notes
+    var personalNote: String = ""
+
     init(english: String, chinese: String, phonetic: String, partOfSpeech: String,
          exampleSentence: String, exampleTranslation: String, category: WordCategory, difficulty: Int) {
         self.id = UUID()

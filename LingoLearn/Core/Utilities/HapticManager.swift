@@ -1,13 +1,22 @@
 import UIKit
+import SwiftData
 
 final class HapticManager {
     static let shared = HapticManager()
 
     private init() {}
 
+    /// User preference for haptics (can be set from settings)
+    var isEnabled: Bool = true
+
     // Check if device supports haptics
     var isHapticsAvailable: Bool {
         return UIDevice.current.userInterfaceIdiom == .phone
+    }
+
+    /// Check if haptics should fire (available + enabled)
+    private var shouldFireHaptics: Bool {
+        return isHapticsAvailable && isEnabled
     }
 
     // MARK: - Convenience Methods
@@ -36,7 +45,7 @@ final class HapticManager {
 
     /// Impact haptic feedback with custom style
     func impact(style: UIImpactFeedbackGenerator.FeedbackStyle) {
-        guard isHapticsAvailable else { return }
+        guard shouldFireHaptics else { return }
         let generator = UIImpactFeedbackGenerator(style: style)
         generator.prepare()
         generator.impactOccurred()
@@ -44,7 +53,7 @@ final class HapticManager {
 
     /// Notification haptic feedback with custom type
     func notification(type: UINotificationFeedbackGenerator.FeedbackType) {
-        guard isHapticsAvailable else { return }
+        guard shouldFireHaptics else { return }
         let generator = UINotificationFeedbackGenerator()
         generator.prepare()
         generator.notificationOccurred(type)
@@ -52,7 +61,7 @@ final class HapticManager {
 
     /// Selection haptic feedback
     func selection() {
-        guard isHapticsAvailable else { return }
+        guard shouldFireHaptics else { return }
         let generator = UISelectionFeedbackGenerator()
         generator.prepare()
         generator.selectionChanged()

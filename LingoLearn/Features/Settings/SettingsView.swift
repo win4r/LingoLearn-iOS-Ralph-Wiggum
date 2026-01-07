@@ -10,9 +10,20 @@ import SwiftData
 
 struct SettingsView: View {
     @Environment(\.modelContext) private var modelContext
+    @Query private var allWords: [Word]
     @State private var viewModel: SettingsViewModel?
     @State private var showResetConfirmation = false
     @State private var showContent = false
+    @State private var showExportSheet = false
+    @State private var exportURL: URL?
+    @State private var isExporting = false
+
+    private var wordStats: (total: Int, mastered: Int, learning: Int, new: Int) {
+        let mastered = allWords.filter { $0.masteryLevel == .mastered }.count
+        let learning = allWords.filter { $0.masteryLevel == .learning || $0.masteryLevel == .reviewing }.count
+        let newWords = allWords.filter { $0.masteryLevel == .new }.count
+        return (allWords.count, mastered, learning, newWords)
+    }
 
     var body: some View {
         NavigationStack {
@@ -42,7 +53,80 @@ struct SettingsView: View {
             } message: {
                 Text("确定要重置所有学习进度吗？此操作无法撤销。")
             }
+            .sheet(isPresented: $showExportSheet) {
+                if let url = exportURL {
+                    ShareSheet(items: [url])
+                }
+            }
         }
+    }
+
+    private func exportStudyHistory() {
+        isExporting = true
+        HapticManager.shared.impact()
+
+        Task {
+            do {
+                let url = try await generateCSVExport()
+                await MainActor.run {
+                    exportURL = url
+                    isExporting = false
+                    showExportSheet = true
+                    HapticManager.shared.success()
+                }
+            } catch {
+                await MainActor.run {
+                    isExporting = false
+                    HapticManager.shared.error()
+                }
+            }
+        }
+    }
+
+    private func generateCSVExport() async throws -> URL {
+        // Fetch all study sessions and words
+        let sessionDescriptor = FetchDescriptor<StudySession>(sortBy: [SortDescriptor(\.date, order: .reverse)])
+        let sessions = (try? modelContext.fetch(sessionDescriptor)) ?? []
+
+        let progressDescriptor = FetchDescriptor<DailyProgress>(sortBy: [SortDescriptor(\.date, order: .reverse)])
+        let progress = (try? modelContext.fetch(progressDescriptor)) ?? []
+
+        // Create CSV content
+        var csvContent = "日期,学习单词数,复习单词数,正确率,学习时间(分钟)\n"
+
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "yyyy-MM-dd"
+
+        for day in progress {
+            let dateStr = dateFormatter.string(from: day.date)
+            let accuracy = String(format: "%.1f%%", day.accuracy * 100)
+            let studyTime = String(format: "%.1f", day.totalStudyTime / 60)
+            csvContent += "\(dateStr),\(day.wordsLearned),\(day.wordsReviewed),\(accuracy),\(studyTime)\n"
+        }
+
+        csvContent += "\n\n单词学习详情\n"
+        csvContent += "单词,中文释义,掌握度,学习次数,正确次数,正确率\n"
+
+        for word in allWords.sorted(by: { $0.timesStudied > $1.timesStudied }) {
+            let accuracy = word.timesStudied > 0 ? Double(word.timesCorrect) / Double(word.timesStudied) * 100 : 0
+            let accuracyStr = String(format: "%.1f%%", accuracy)
+            // Escape commas in text
+            let english = word.english.replacingOccurrences(of: ",", with: " ")
+            let chinese = word.chinese.replacingOccurrences(of: ",", with: " ")
+            csvContent += "\(english),\(chinese),\(word.masteryLevel.displayName),\(word.timesStudied),\(word.timesCorrect),\(accuracyStr)\n"
+        }
+
+        // Write to temporary file
+        let tempDir = FileManager.default.temporaryDirectory
+        let fileName = "LingoLearn_学习记录_\(dateFormatter.string(from: Date())).csv"
+        let fileURL = tempDir.appendingPathComponent(fileName)
+
+        // Write with UTF-8 BOM for Excel compatibility
+        let bom = "\u{FEFF}"
+        let dataWithBOM = (bom + csvContent).data(using: .utf8)!
+        try dataWithBOM.write(to: fileURL)
+
+        return fileURL
     }
 
     @ViewBuilder
@@ -126,6 +210,26 @@ struct SettingsView: View {
                         viewModel.autoPlayPronunciation = $0
                     }
                 ))
+
+                HStack {
+                    Text("发音速度")
+                    Spacer()
+                    Picker("发音速度", selection: Binding(
+                        get: { viewModel.speechRate },
+                        set: {
+                            HapticManager.shared.selection()
+                            viewModel.speechRate = $0
+                            // Preview the selected speed
+                            SpeechService.shared.speak(text: "Hello", rate: $0.rate)
+                        }
+                    )) {
+                        ForEach(SpeechRate.allCases, id: \.self) { rate in
+                            Text(rate.displayName).tag(rate)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .frame(width: 180)
+                }
             } header: {
                 SettingSectionHeader(icon: "speaker.wave.2", title: "发音设置", color: .green)
             } footer: {
@@ -191,6 +295,77 @@ struct SettingsView: View {
                 .foregroundStyle(.secondary)
             }
 
+            // Word Statistics Section
+            Section {
+                VStack(spacing: 16) {
+                    // Total words
+                    HStack {
+                        Label("总单词数", systemImage: "textformat.abc")
+                            .foregroundStyle(.primary)
+                        Spacer()
+                        Text("\(wordStats.total)")
+                            .font(.headline)
+                            .foregroundStyle(.blue)
+                    }
+
+                    Divider()
+
+                    // Progress breakdown
+                    HStack(spacing: 20) {
+                        StatPill(
+                            icon: "checkmark.circle.fill",
+                            label: "已掌握",
+                            count: wordStats.mastered,
+                            color: .green
+                        )
+
+                        StatPill(
+                            icon: "book.fill",
+                            label: "学习中",
+                            count: wordStats.learning,
+                            color: .orange
+                        )
+
+                        StatPill(
+                            icon: "sparkle",
+                            label: "新词",
+                            count: wordStats.new,
+                            color: .gray
+                        )
+                    }
+
+                    // Progress bar
+                    if wordStats.total > 0 {
+                        VStack(alignment: .leading, spacing: 6) {
+                            GeometryReader { geo in
+                                HStack(spacing: 2) {
+                                    Rectangle()
+                                        .fill(Color.green)
+                                        .frame(width: geo.size.width * CGFloat(wordStats.mastered) / CGFloat(wordStats.total))
+
+                                    Rectangle()
+                                        .fill(Color.orange)
+                                        .frame(width: geo.size.width * CGFloat(wordStats.learning) / CGFloat(wordStats.total))
+
+                                    Rectangle()
+                                        .fill(Color.gray.opacity(0.3))
+                                        .frame(width: geo.size.width * CGFloat(wordStats.new) / CGFloat(wordStats.total))
+                                }
+                                .clipShape(Capsule())
+                            }
+                            .frame(height: 8)
+
+                            Text("掌握率: \(wordStats.total > 0 ? Int(Double(wordStats.mastered) / Double(wordStats.total) * 100) : 0)%")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+                .padding(.vertical, 8)
+            } header: {
+                SettingSectionHeader(icon: "chart.pie.fill", title: "学习统计", color: .purple)
+            }
+
             // Data Section
             Section {
                 Button(role: .destructive, action: {
@@ -230,6 +405,56 @@ struct SettingsView: View {
                     Image(systemName: "info.circle")
                         .font(.caption2)
                     Text("此操作将删除所有学习记录，但保留已学单词")
+                }
+                .foregroundStyle(.secondary)
+            }
+
+            // Export Section
+            Section {
+                Button(action: exportStudyHistory) {
+                    HStack(spacing: 12) {
+                        ZStack {
+                            Circle()
+                                .fill(
+                                    LinearGradient(
+                                        colors: [.indigo.opacity(0.15), .purple.opacity(0.1)],
+                                        startPoint: .topLeading,
+                                        endPoint: .bottomTrailing
+                                    )
+                                )
+                                .frame(width: 32, height: 32)
+
+                            if isExporting {
+                                ProgressView()
+                                    .scaleEffect(0.7)
+                            } else {
+                                Image(systemName: "square.and.arrow.up.fill")
+                                    .foregroundStyle(
+                                        LinearGradient(
+                                            colors: [.indigo, .purple],
+                                            startPoint: .top,
+                                            endPoint: .bottom
+                                        )
+                                    )
+                            }
+                        }
+                        Text("导出学习记录")
+                            .foregroundStyle(.primary)
+                            .fontWeight(.medium)
+                        Spacer()
+                        Image(systemName: "doc.badge.arrow.up")
+                            .font(.caption)
+                            .foregroundStyle(.tertiary)
+                    }
+                }
+                .disabled(isExporting)
+            } header: {
+                SettingSectionHeader(icon: "square.and.arrow.up", title: "数据导出", color: .indigo)
+            } footer: {
+                HStack(spacing: 4) {
+                    Image(systemName: "doc.text")
+                        .font(.caption2)
+                    Text("导出 CSV 格式的学习历史记录")
                 }
                 .foregroundStyle(.secondary)
             }
@@ -407,6 +632,45 @@ extension AppearanceMode {
         case .dark: return "深色"
         }
     }
+}
+
+// MARK: - Stat Pill
+
+private struct StatPill: View {
+    let icon: String
+    let label: String
+    let count: Int
+    let color: Color
+
+    var body: some View {
+        VStack(spacing: 6) {
+            HStack(spacing: 4) {
+                Image(systemName: icon)
+                    .font(.caption2)
+                    .foregroundStyle(color)
+                Text("\(count)")
+                    .font(.headline)
+                    .fontWeight(.bold)
+                    .foregroundStyle(color)
+            }
+            Text(label)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity)
+    }
+}
+
+// MARK: - Share Sheet
+
+struct ShareSheet: UIViewControllerRepresentable {
+    let items: [Any]
+
+    func makeUIViewController(context: Context) -> UIActivityViewController {
+        UIActivityViewController(activityItems: items, applicationActivities: nil)
+    }
+
+    func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
 }
 
 #Preview {

@@ -7,13 +7,55 @@
 
 import Foundation
 import UserNotifications
+import Combine
 
-class NotificationService {
+/// Notification action identifiers
+enum NotificationAction: String {
+    case startLearning = "START_LEARNING_ACTION"
+    case quickReview = "QUICK_REVIEW_ACTION"
+}
+
+/// Notification category identifiers
+enum NotificationCategory: String {
+    case dailyReminder = "DAILY_REMINDER_CATEGORY"
+}
+
+class NotificationService: NSObject {
     static let shared = NotificationService()
 
     private let notificationIdentifier = "daily_reminder"
 
-    private init() {}
+    /// Published action that was tapped (observed by views)
+    @Published var pendingAction: NotificationAction?
+
+    private override init() {
+        super.init()
+    }
+
+    /// Setup notification categories with actions
+    func setupCategories() {
+        let startLearningAction = UNNotificationAction(
+            identifier: NotificationAction.startLearning.rawValue,
+            title: "开始学习",
+            options: [.foreground]
+        )
+
+        let quickReviewAction = UNNotificationAction(
+            identifier: NotificationAction.quickReview.rawValue,
+            title: "快速复习",
+            options: [.foreground]
+        )
+
+        let dailyReminderCategory = UNNotificationCategory(
+            identifier: NotificationCategory.dailyReminder.rawValue,
+            actions: [startLearningAction, quickReviewAction],
+            intentIdentifiers: [],
+            options: []
+        )
+
+        UNUserNotificationCenter.current().setNotificationCategories([dailyReminderCategory])
+        UNUserNotificationCenter.current().delegate = self
+    }
 
     /// Request notification permission from user
     func requestPermission() async -> Bool {
@@ -22,7 +64,7 @@ class NotificationService {
             let granted = try await center.requestAuthorization(options: [.alert, .sound, .badge])
             return granted
         } catch {
-            print("Error requesting notification permission: \(error)")
+            AppLogger.logError("Failed to request notification permission", error: error, category: AppLogger.notifications)
             return false
         }
     }
@@ -42,6 +84,7 @@ class NotificationService {
         content.body = "该学习单词了！保持每日学习习惯"
         content.sound = .default
         content.badge = 1
+        content.categoryIdentifier = NotificationCategory.dailyReminder.rawValue
 
         // Create trigger for daily repeating notification
         var dateComponents = DateComponents()
@@ -59,9 +102,9 @@ class NotificationService {
         // Add notification request
         do {
             try await UNUserNotificationCenter.current().add(request)
-            print("Daily notification scheduled for \(components.hour ?? 0):\(components.minute ?? 0)")
+            AppLogger.logDebug("Daily notification scheduled for \(components.hour ?? 0):\(components.minute ?? 0)", category: AppLogger.notifications)
         } catch {
-            print("Error scheduling notification: \(error)")
+            AppLogger.logError("Failed to schedule notification", error: error, category: AppLogger.notifications)
         }
     }
 
@@ -93,7 +136,61 @@ class NotificationService {
         do {
             try await UNUserNotificationCenter.current().add(request)
         } catch {
-            print("Error sending immediate notification: \(error)")
+            AppLogger.logError("Failed to send immediate notification", error: error, category: AppLogger.notifications)
         }
+    }
+
+    /// Clear any pending action
+    func clearPendingAction() {
+        pendingAction = nil
+    }
+}
+
+// MARK: - UNUserNotificationCenterDelegate
+
+extension NotificationService: UNUserNotificationCenterDelegate {
+    /// Handle notification when app is in foreground
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        willPresent notification: UNNotification,
+        withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
+    ) {
+        // Show notification even when app is in foreground
+        completionHandler([.banner, .sound, .badge])
+    }
+
+    /// Handle notification action response
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        didReceive response: UNNotificationResponse,
+        withCompletionHandler completionHandler: @escaping () -> Void
+    ) {
+        let actionIdentifier = response.actionIdentifier
+
+        // Clear badge
+        center.setBadgeCount(0)
+
+        // Handle action based on identifier
+        switch actionIdentifier {
+        case NotificationAction.startLearning.rawValue:
+            AppLogger.logDebug("User tapped Start Learning action", category: AppLogger.notifications)
+            pendingAction = .startLearning
+            HapticManager.shared.impact()
+
+        case NotificationAction.quickReview.rawValue:
+            AppLogger.logDebug("User tapped Quick Review action", category: AppLogger.notifications)
+            pendingAction = .quickReview
+            HapticManager.shared.impact()
+
+        case UNNotificationDefaultActionIdentifier:
+            // User tapped on notification itself (not an action button)
+            AppLogger.logDebug("User tapped notification", category: AppLogger.notifications)
+            pendingAction = .startLearning // Default to learning mode
+
+        default:
+            break
+        }
+
+        completionHandler()
     }
 }

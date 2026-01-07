@@ -12,6 +12,7 @@ struct FlashcardStack: View {
     let currentIndex: Int
     let onSwipe: (SwipeDirection) -> Void
     var autoPlayPronunciation: Bool = false
+    var speechRate: SpeechRate = .normal
 
     private let maxVisibleCards = 3
     private let cardOffset: CGFloat = 10
@@ -45,7 +46,8 @@ struct FlashcardStack: View {
                     FlashcardItem(
                         word: words[index],
                         onSwipe: onSwipe,
-                        autoPlayPronunciation: autoPlayPronunciation && index == currentIndex
+                        autoPlayPronunciation: autoPlayPronunciation && index == currentIndex,
+                        speechRate: speechRate
                     )
                     .offset(y: offsetForCard(at: index))
                     .scaleEffect(scaleForCard(at: index))

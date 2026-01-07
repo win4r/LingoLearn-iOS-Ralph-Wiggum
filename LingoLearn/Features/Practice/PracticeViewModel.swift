@@ -149,12 +149,14 @@ class PracticeViewModel {
 
         if isCorrect {
             correctAnswers += 1
+            SoundService.shared.playSuccess()
         } else {
             wrongAnswers.append(WrongAnswer(
                 word: question.word,
                 userAnswer: answer,
                 correctAnswer: question.correctAnswer
             ))
+            SoundService.shared.playError()
         }
     }
 
@@ -171,6 +173,7 @@ class PracticeViewModel {
     func completeTest() {
         stopTimer()
         testCompleted = true
+        SoundService.shared.playComplete()
     }
 
     func saveSession(modelContext: ModelContext, sessionType: SessionType) {

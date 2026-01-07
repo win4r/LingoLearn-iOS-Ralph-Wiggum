@@ -11,6 +11,7 @@ struct FlashcardItem: View {
     let word: Word
     let onSwipe: (SwipeDirection) -> Void
     var autoPlayPronunciation: Bool = false
+    var speechRate: SpeechRate = .normal
 
     @State private var isFlipped = false
     @State private var offset: CGSize = .zero
@@ -22,6 +23,28 @@ struct FlashcardItem: View {
     private let speechService = SpeechService.shared
 
     private let swipeThreshold: CGFloat = 100
+
+    private func formatNextReview(_ date: Date) -> String {
+        let calendar = Calendar.current
+        let now = Date()
+
+        if calendar.isDateInToday(date) {
+            return "今天"
+        } else if calendar.isDateInTomorrow(date) {
+            return "明天"
+        } else {
+            let days = calendar.dateComponents([.day], from: now, to: date).day ?? 0
+            if days < 0 {
+                return "已过期"
+            } else if days <= 7 {
+                return "\(days)天后"
+            } else {
+                let formatter = DateFormatter()
+                formatter.dateFormat = "M月d日"
+                return formatter.string(from: date)
+            }
+        }
+    }
 
     private var cardGradientFront: [Color] {
         [Color(.systemBackground), Color.blue.opacity(0.08), Color.cyan.opacity(0.05)]
@@ -84,7 +107,7 @@ struct FlashcardItem: View {
             if autoPlayPronunciation && !hasAutoPlayed {
                 hasAutoPlayed = true
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                    speechService.speak(text: word.english)
+                    speechService.speak(text: word.english, rate: speechRate.rate)
                 }
             }
         }
@@ -92,7 +115,7 @@ struct FlashcardItem: View {
         .accessibilityLabel(isFlipped
             ? "单词卡片,\(word.english),意思是\(word.chinese)"
             : "单词卡片,\(word.english),\(word.phonetic)")
-        .accessibilityHint("双击翻转卡片,向右滑动表示认识,向左滑动表示不认识,向上滑动收藏")
+        .accessibilityHint("双击翻转卡片,向右滑动表示认识,向左滑动表示不认识,向上滑动收藏,向下滑动表示太简单")
         .accessibilityAddTraits(.isButton)
     }
 
@@ -114,26 +137,46 @@ struct FlashcardItem: View {
             VStack(spacing: 20) {
                 Spacer()
 
-                // Category badge
-                HStack(spacing: 6) {
-                    Image(systemName: "book.closed.fill")
-                        .font(.caption2)
-                    Text(word.category.rawValue)
-                        .font(.caption2)
-                        .fontWeight(.semibold)
-                }
-                .foregroundStyle(.white)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 5)
-                .background(
-                    LinearGradient(
-                        colors: [.blue, .cyan],
-                        startPoint: .leading,
-                        endPoint: .trailing
+                // Category and difficulty badges
+                HStack(spacing: 8) {
+                    // Category badge
+                    HStack(spacing: 6) {
+                        Image(systemName: "book.closed.fill")
+                            .font(.caption2)
+                        Text(word.category.rawValue)
+                            .font(.caption2)
+                            .fontWeight(.semibold)
+                    }
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 5)
+                    .background(
+                        LinearGradient(
+                            colors: [.blue, .cyan],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
                     )
-                )
-                .clipShape(Capsule())
-                .shadow(color: .blue.opacity(0.3), radius: 4, y: 2)
+                    .clipShape(Capsule())
+                    .shadow(color: .blue.opacity(0.3), radius: 4, y: 2)
+
+                    // Difficulty stars
+                    HStack(spacing: 2) {
+                        ForEach(1...3, id: \.self) { star in
+                            Image(systemName: star <= word.difficulty ? "star.fill" : "star")
+                                .font(.caption2)
+                                .foregroundStyle(
+                                    star <= word.difficulty
+                                        ? LinearGradient(colors: [.yellow, .orange], startPoint: .top, endPoint: .bottom)
+                                        : LinearGradient(colors: [.gray.opacity(0.3), .gray.opacity(0.2)], startPoint: .top, endPoint: .bottom)
+                                )
+                        }
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .background(Color(.systemGray6))
+                    .clipShape(Capsule())
+                }
                 .opacity(appeared ? 1 : 0)
                 .offset(y: appeared ? 0 : -10)
 
@@ -176,7 +219,7 @@ struct FlashcardItem: View {
                 // Speaker Button with enhanced styling
                 Button(action: {
                     speakerPulse = true
-                    speechService.speak(text: word.english, language: "en-US")
+                    speechService.speak(text: word.english, language: "en-US", rate: speechRate.rate)
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                         speakerPulse = false
                     }
@@ -267,21 +310,63 @@ struct FlashcardItem: View {
         VStack(spacing: 16) {
             Spacer()
 
-            // Difficulty indicator
-            HStack(spacing: 4) {
-                ForEach(0..<5, id: \.self) { i in
-                    Circle()
-                        .fill(
-                            i < word.difficulty ?
-                                LinearGradient(colors: [.purple, .pink], startPoint: .top, endPoint: .bottom) :
-                                LinearGradient(colors: [Color.gray.opacity(0.3)], startPoint: .top, endPoint: .bottom)
-                        )
-                        .frame(width: 8, height: 8)
+            // Study progress indicators
+            HStack(spacing: 16) {
+                // Times studied
+                HStack(spacing: 4) {
+                    Image(systemName: "book.fill")
+                        .font(.caption2)
+                        .foregroundStyle(.blue)
+                    Text("\(word.timesStudied)次")
+                        .font(.caption2)
+                        .fontWeight(.medium)
                 }
-                Text("难度")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .padding(.leading, 4)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(Color.blue.opacity(0.1))
+                .clipShape(Capsule())
+
+                // Accuracy
+                if word.timesStudied > 0 {
+                    HStack(spacing: 4) {
+                        Image(systemName: "percent")
+                            .font(.caption2)
+                            .foregroundStyle(.green)
+                        Text("\(Int(Double(word.timesCorrect) / Double(word.timesStudied) * 100))%")
+                            .font(.caption2)
+                            .fontWeight(.medium)
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Color.green.opacity(0.1))
+                    .clipShape(Capsule())
+                }
+
+                // Mastery level
+                HStack(spacing: 4) {
+                    Image(systemName: word.masteryLevel.icon)
+                        .font(.caption2)
+                        .foregroundStyle(word.masteryLevel.color)
+                    Text(word.masteryLevel.displayName)
+                        .font(.caption2)
+                        .fontWeight(.medium)
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(word.masteryLevel.color.opacity(0.1))
+                .clipShape(Capsule())
+            }
+
+            // Next review date (if scheduled)
+            if let nextReview = word.nextReviewDate {
+                HStack(spacing: 4) {
+                    Image(systemName: "calendar.badge.clock")
+                        .font(.caption2)
+                        .foregroundStyle(.purple)
+                    Text("下次复习: \(formatNextReview(nextReview))")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
             }
 
             // Chinese Meaning
@@ -295,6 +380,66 @@ struct FlashcardItem: View {
                     )
                 )
                 .multilineTextAlignment(.center)
+
+            // Pronunciation practice buttons
+            HStack(spacing: 12) {
+                // Normal speed button
+                Button(action: {
+                    HapticManager.shared.impact()
+                    SoundService.shared.playTap()
+                    speechService.speak(text: word.english, rate: speechRate.rate)
+                }) {
+                    HStack(spacing: 6) {
+                        Image(systemName: speechService.isSpeaking ? "speaker.wave.3.fill" : "speaker.wave.2.fill")
+                            .font(.subheadline)
+                            .symbolEffect(.variableColor, options: .repeating.speed(0.5), value: speechService.isSpeaking)
+                        Text("正常")
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                    }
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 10)
+                    .background(
+                        LinearGradient(
+                            colors: [.blue, .cyan],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                    )
+                    .clipShape(Capsule())
+                    .shadow(color: .blue.opacity(0.3), radius: 6, y: 3)
+                }
+                .buttonStyle(FlashcardButtonStyle())
+
+                // Slow speed button for practice
+                Button(action: {
+                    HapticManager.shared.impact()
+                    SoundService.shared.playTap()
+                    speechService.speak(text: word.english, rate: SpeechRate.slow.rate)
+                }) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "tortoise.fill")
+                            .font(.subheadline)
+                        Text("慢速")
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                    }
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 10)
+                    .background(
+                        LinearGradient(
+                            colors: [.orange, .yellow],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                    )
+                    .clipShape(Capsule())
+                    .shadow(color: .orange.opacity(0.3), radius: 6, y: 3)
+                }
+                .buttonStyle(FlashcardButtonStyle())
+            }
 
             // Decorative divider
             HStack(spacing: 8) {
@@ -534,6 +679,41 @@ struct FlashcardItem: View {
                         }
                     )
                     .transition(.opacity)
+            } else if offset.height > 50 {
+                // Down swipe - Easy/Perfect recall
+                RoundedRectangle(cornerRadius: 20)
+                    .fill(
+                        LinearGradient(
+                            colors: [Color.mint.opacity(0.3), Color.cyan.opacity(0.3)],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+                    .overlay(
+                        VStack(spacing: 8) {
+                            Image(systemName: "bolt.fill")
+                                .font(.system(size: 60))
+                                .foregroundStyle(
+                                    LinearGradient(
+                                        colors: [.mint, .cyan],
+                                        startPoint: .top,
+                                        endPoint: .bottom
+                                    )
+                                )
+                                .shadow(color: .cyan.opacity(0.5), radius: 10)
+                            Text("太简单")
+                                .font(.title)
+                                .fontWeight(.bold)
+                                .foregroundStyle(
+                                    LinearGradient(
+                                        colors: [.mint, .cyan],
+                                        startPoint: .leading,
+                                        endPoint: .trailing
+                                    )
+                                )
+                        }
+                    )
+                    .transition(.opacity)
             }
         }
         .animation(.easeInOut(duration: 0.2), value: offset.width)
@@ -579,6 +759,16 @@ struct FlashcardItem: View {
                 }
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                     onSwipe(.up)
+                    resetCard()
+                }
+            } else if verticalAmount > swipeThreshold {
+                // Down swipe - Easy/Perfect recall
+                HapticManager.shared.success()
+                withAnimation {
+                    offset = CGSize(width: 0, height: 500)
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                    onSwipe(.down)
                     resetCard()
                 }
             } else {

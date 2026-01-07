@@ -24,10 +24,11 @@ class SpeechService: NSObject, ObservableObject {
     /// - Parameters:
     ///   - text: The text to speak
     ///   - language: Language code (default: "en-US")
-    func speak(text: String, language: String = AppConstants.Speech.defaultLanguage) {
+    ///   - rate: Speech rate (default uses AppConstants value)
+    func speak(text: String, language: String = AppConstants.Speech.defaultLanguage, rate: Float? = nil) {
         let utterance = AVSpeechUtterance(string: text)
         utterance.voice = AVSpeechSynthesisVoice(language: language)
-        utterance.rate = AppConstants.Speech.learningRate
+        utterance.rate = rate ?? AppConstants.Speech.learningRate
         utterance.pitchMultiplier = 1.0
         utterance.volume = 1.0
 

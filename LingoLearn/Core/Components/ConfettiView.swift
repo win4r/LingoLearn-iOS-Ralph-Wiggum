@@ -378,7 +378,443 @@ extension View {
     }
 }
 
-#Preview {
+// MARK: - Milestone Celebration View
+
+struct MilestoneCelebrationView: View {
+    let milestone: Int
+    @Binding var isShowing: Bool
+
+    @State private var showContent = false
+    @State private var iconScale: CGFloat = 0.3
+    @State private var ringScale: CGFloat = 0.5
+    @State private var ringOpacity: Double = 0
+    @State private var showConfetti = false
+
+    private var milestoneEmoji: String {
+        switch milestone {
+        case 7: return "flame.fill"
+        case 30: return "crown.fill"
+        case 100: return "trophy.fill"
+        case 365: return "sparkles"
+        default: return "star.fill"
+        }
+    }
+
+    private var milestoneTitle: String {
+        switch milestone {
+        case 7: return "坚持一周!"
+        case 30: return "坚持一个月!"
+        case 100: return "传奇百日!"
+        case 365: return "整整一年!"
+        default: return "里程碑达成!"
+        }
+    }
+
+    private var milestoneSubtitle: String {
+        switch milestone {
+        case 7: return "你已经连续学习7天，习惯正在形成"
+        case 30: return "30天的坚持，你的词汇量大幅提升"
+        case 100: return "100天！你是真正的学习达人"
+        case 365: return "一年的坚持，你已经成为词汇大师"
+        default: return "继续保持，你做得很棒!"
+        }
+    }
+
+    private var milestoneColors: [Color] {
+        switch milestone {
+        case 7: return [.orange, .red]
+        case 30: return [.purple, .pink]
+        case 100: return [.yellow, .orange]
+        case 365: return [.blue, .cyan]
+        default: return [.green, .teal]
+        }
+    }
+
+    var body: some View {
+        ZStack {
+            // Dim background
+            Color.black.opacity(showContent ? 0.5 : 0)
+                .ignoresSafeArea()
+                .onTapGesture {
+                    dismiss()
+                }
+
+            // Celebration content
+            VStack(spacing: 24) {
+                // Animated icon with rings
+                ZStack {
+                    // Expanding rings
+                    ForEach(0..<3, id: \.self) { i in
+                        Circle()
+                            .stroke(
+                                LinearGradient(
+                                    colors: milestoneColors,
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                ),
+                                lineWidth: 2
+                            )
+                            .frame(width: 100 + CGFloat(i) * 30, height: 100 + CGFloat(i) * 30)
+                            .scaleEffect(ringScale + CGFloat(i) * 0.1)
+                            .opacity(ringOpacity - Double(i) * 0.2)
+                    }
+
+                    // Icon background
+                    Circle()
+                        .fill(
+                            LinearGradient(
+                                colors: milestoneColors,
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                        .frame(width: 80, height: 80)
+                        .shadow(color: milestoneColors.first?.opacity(0.5) ?? .clear, radius: 20)
+
+                    // Icon
+                    Image(systemName: milestoneEmoji)
+                        .font(.system(size: 36))
+                        .foregroundStyle(.white)
+                        .scaleEffect(iconScale)
+                }
+
+                // Title
+                VStack(spacing: 8) {
+                    Text(milestoneTitle)
+                        .font(.title)
+                        .fontWeight(.bold)
+                        .foregroundStyle(
+                            LinearGradient(
+                                colors: milestoneColors,
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
+                        )
+
+                    Text(milestoneSubtitle)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 32)
+                }
+                .opacity(showContent ? 1 : 0)
+                .offset(y: showContent ? 0 : 20)
+
+                // Streak count badge
+                HStack(spacing: 6) {
+                    Image(systemName: "flame.fill")
+                        .foregroundStyle(.orange)
+                    Text("\(milestone)天连续学习")
+                        .fontWeight(.semibold)
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
+                .background(
+                    Capsule()
+                        .fill(Color(.systemGray6))
+                )
+                .opacity(showContent ? 1 : 0)
+                .scaleEffect(showContent ? 1 : 0.8)
+
+                // Dismiss button
+                Button(action: dismiss) {
+                    Text("太棒了!")
+                        .font(.headline)
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 40)
+                        .padding(.vertical, 14)
+                        .background(
+                            LinearGradient(
+                                colors: milestoneColors,
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
+                        )
+                        .clipShape(Capsule())
+                        .shadow(color: milestoneColors.first?.opacity(0.4) ?? .clear, radius: 8, y: 4)
+                }
+                .opacity(showContent ? 1 : 0)
+                .scaleEffect(showContent ? 1 : 0.8)
+            }
+            .padding(40)
+            .background(
+                RoundedRectangle(cornerRadius: 28)
+                    .fill(Color(.systemBackground))
+                    .shadow(color: .black.opacity(0.2), radius: 30, y: 10)
+            )
+            .scaleEffect(showContent ? 1 : 0.8)
+            .opacity(showContent ? 1 : 0)
+
+            // Confetti overlay
+            ConfettiView(isActive: $showConfetti, duration: 3.5, intensity: .intense)
+        }
+        .onChange(of: isShowing) { _, newValue in
+            if newValue {
+                showCelebration()
+            }
+        }
+        .onAppear {
+            if isShowing {
+                showCelebration()
+            }
+        }
+    }
+
+    private func showCelebration() {
+        HapticManager.shared.success()
+        showConfetti = true
+
+        withAnimation(.spring(response: 0.5, dampingFraction: 0.6)) {
+            showContent = true
+        }
+
+        withAnimation(.spring(response: 0.6, dampingFraction: 0.5).delay(0.1)) {
+            iconScale = 1.0
+        }
+
+        withAnimation(.easeOut(duration: 1).delay(0.2)) {
+            ringScale = 1.2
+            ringOpacity = 0.6
+        }
+
+        // Ring pulse animation
+        withAnimation(.easeInOut(duration: 1.5).repeatForever(autoreverses: true).delay(0.5)) {
+            ringOpacity = 0.3
+        }
+    }
+
+    private func dismiss() {
+        HapticManager.shared.impact()
+        withAnimation(.easeOut(duration: 0.3)) {
+            showContent = false
+            ringOpacity = 0
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            isShowing = false
+        }
+    }
+}
+
+// MARK: - Milestone Celebration Modifier
+
+struct MilestoneCelebrationModifier: ViewModifier {
+    @Binding var isShowing: Bool
+    let milestone: Int
+
+    func body(content: Content) -> some View {
+        ZStack {
+            content
+            if isShowing {
+                MilestoneCelebrationView(milestone: milestone, isShowing: $isShowing)
+            }
+        }
+    }
+}
+
+extension View {
+    func milestoneCelebration(isShowing: Binding<Bool>, milestone: Int) -> some View {
+        modifier(MilestoneCelebrationModifier(isShowing: isShowing, milestone: milestone))
+    }
+
+    func goalCelebration(isShowing: Binding<Bool>) -> some View {
+        modifier(GoalCelebrationModifier(isShowing: isShowing))
+    }
+}
+
+// MARK: - Goal Celebration View
+
+struct GoalCelebrationView: View {
+    @Binding var isShowing: Bool
+
+    @State private var showContent = false
+    @State private var iconScale: CGFloat = 0.3
+    @State private var ringScale: CGFloat = 0.5
+    @State private var ringOpacity: Double = 0
+    @State private var showConfetti = false
+
+    private let celebrationColors: [Color] = [.green, .mint]
+
+    var body: some View {
+        ZStack {
+            // Dim background
+            Color.black.opacity(showContent ? 0.5 : 0)
+                .ignoresSafeArea()
+                .onTapGesture {
+                    dismiss()
+                }
+
+            // Celebration content
+            VStack(spacing: 24) {
+                // Animated icon with rings
+                ZStack {
+                    // Expanding rings
+                    ForEach(0..<3, id: \.self) { i in
+                        Circle()
+                            .stroke(
+                                LinearGradient(
+                                    colors: celebrationColors,
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                ),
+                                lineWidth: 2
+                            )
+                            .frame(width: 100 + CGFloat(i) * 30, height: 100 + CGFloat(i) * 30)
+                            .scaleEffect(ringScale + CGFloat(i) * 0.1)
+                            .opacity(ringOpacity - Double(i) * 0.2)
+                    }
+
+                    // Icon background
+                    Circle()
+                        .fill(
+                            LinearGradient(
+                                colors: celebrationColors,
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                        .frame(width: 80, height: 80)
+                        .shadow(color: celebrationColors.first?.opacity(0.5) ?? .clear, radius: 20)
+
+                    // Icon
+                    Image(systemName: "checkmark.seal.fill")
+                        .font(.system(size: 36))
+                        .foregroundStyle(.white)
+                        .scaleEffect(iconScale)
+                }
+
+                // Title
+                VStack(spacing: 8) {
+                    Text("目标达成!")
+                        .font(.title)
+                        .fontWeight(.bold)
+                        .foregroundStyle(
+                            LinearGradient(
+                                colors: celebrationColors,
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
+                        )
+
+                    Text("恭喜你完成了今天的学习目标")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 32)
+                }
+                .opacity(showContent ? 1 : 0)
+                .offset(y: showContent ? 0 : 20)
+
+                // Encouragement badge
+                HStack(spacing: 6) {
+                    Image(systemName: "sparkles")
+                        .foregroundStyle(.yellow)
+                    Text("继续保持，明天再创佳绩!")
+                        .fontWeight(.medium)
+                }
+                .font(.caption)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
+                .background(
+                    Capsule()
+                        .fill(Color(.systemGray6))
+                )
+                .opacity(showContent ? 1 : 0)
+                .scaleEffect(showContent ? 1 : 0.8)
+
+                // Dismiss button
+                Button(action: dismiss) {
+                    Text("继续学习")
+                        .font(.headline)
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 40)
+                        .padding(.vertical, 14)
+                        .background(
+                            LinearGradient(
+                                colors: celebrationColors,
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
+                        )
+                        .clipShape(Capsule())
+                        .shadow(color: celebrationColors.first?.opacity(0.4) ?? .clear, radius: 8, y: 4)
+                }
+                .opacity(showContent ? 1 : 0)
+                .scaleEffect(showContent ? 1 : 0.8)
+            }
+            .padding(40)
+            .background(
+                RoundedRectangle(cornerRadius: 28)
+                    .fill(Color(.systemBackground))
+                    .shadow(color: .black.opacity(0.2), radius: 30, y: 10)
+            )
+            .scaleEffect(showContent ? 1 : 0.8)
+            .opacity(showContent ? 1 : 0)
+
+            // Confetti overlay
+            ConfettiView(isActive: $showConfetti, duration: 3.5, intensity: .intense)
+        }
+        .onChange(of: isShowing) { _, newValue in
+            if newValue {
+                showCelebration()
+            }
+        }
+        .onAppear {
+            if isShowing {
+                showCelebration()
+            }
+        }
+    }
+
+    private func showCelebration() {
+        HapticManager.shared.success()
+        SoundService.shared.playComplete()
+        showConfetti = true
+
+        withAnimation(.spring(response: 0.5, dampingFraction: 0.6)) {
+            showContent = true
+        }
+
+        withAnimation(.spring(response: 0.6, dampingFraction: 0.5).delay(0.1)) {
+            iconScale = 1.0
+        }
+
+        withAnimation(.easeOut(duration: 1).delay(0.2)) {
+            ringScale = 1.2
+            ringOpacity = 0.6
+        }
+
+        // Ring pulse animation
+        withAnimation(.easeInOut(duration: 1.5).repeatForever(autoreverses: true).delay(0.5)) {
+            ringOpacity = 0.3
+        }
+    }
+
+    private func dismiss() {
+        HapticManager.shared.impact()
+        withAnimation(.easeOut(duration: 0.3)) {
+            showContent = false
+            ringOpacity = 0
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            isShowing = false
+        }
+    }
+}
+
+struct GoalCelebrationModifier: ViewModifier {
+    @Binding var isShowing: Bool
+
+    func body(content: Content) -> some View {
+        ZStack {
+            content
+            if isShowing {
+                GoalCelebrationView(isShowing: $isShowing)
+            }
+        }
+    }
+}
+
+#Preview("Confetti") {
     struct PreviewWrapper: View {
         @State private var showConfetti = false
 
@@ -391,6 +827,48 @@ extension View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .confetti(isActive: $showConfetti)
+        }
+    }
+
+    return PreviewWrapper()
+}
+
+#Preview("Milestone 7 Days") {
+    struct PreviewWrapper: View {
+        @State private var showMilestone = true
+
+        var body: some View {
+            Color(.systemGroupedBackground)
+                .ignoresSafeArea()
+                .milestoneCelebration(isShowing: $showMilestone, milestone: 7)
+        }
+    }
+
+    return PreviewWrapper()
+}
+
+#Preview("Milestone 30 Days") {
+    struct PreviewWrapper: View {
+        @State private var showMilestone = true
+
+        var body: some View {
+            Color(.systemGroupedBackground)
+                .ignoresSafeArea()
+                .milestoneCelebration(isShowing: $showMilestone, milestone: 30)
+        }
+    }
+
+    return PreviewWrapper()
+}
+
+#Preview("Milestone 100 Days") {
+    struct PreviewWrapper: View {
+        @State private var showMilestone = true
+
+        var body: some View {
+            Color(.systemGroupedBackground)
+                .ignoresSafeArea()
+                .milestoneCelebration(isShowing: $showMilestone, milestone: 100)
         }
     }
 

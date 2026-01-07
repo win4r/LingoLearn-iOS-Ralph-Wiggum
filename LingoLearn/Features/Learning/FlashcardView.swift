@@ -13,13 +13,27 @@ struct FlashcardView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var viewModel: FlashcardViewModel?
     @State private var autoPlayPronunciation: Bool = false
+    @State private var speechRate: SpeechRate = .normal
     @State private var hasAppeared = false
+    @StateObject private var onboarding = OnboardingManager.shared
+    @State private var sessionStartTime: Date = Date()
+    @State private var elapsedTime: TimeInterval = 0
+    @State private var timer: Timer?
+    @State private var showCategoryFilter = false
+    @State private var focusModeEnabled = false
 
     let mode: LearningMode
+    var categoryFilter: WordCategory? = nil
 
     private var progress: Double {
         guard let vm = viewModel, !vm.currentWords.isEmpty else { return 0 }
         return Double(vm.currentIndex) / Double(vm.currentWords.count)
+    }
+
+    private var formattedTime: String {
+        let minutes = Int(elapsedTime) / 60
+        let seconds = Int(elapsedTime) % 60
+        return String(format: "%d:%02d", minutes, seconds)
     }
 
     var body: some View {
@@ -46,42 +60,110 @@ struct FlashcardView: View {
                 }
 
                 // Card Stack
-                if let vm = viewModel, vm.hasMoreCards {
-                    FlashcardStack(
-                        words: vm.currentWords,
-                        currentIndex: vm.currentIndex,
-                        onSwipe: { direction in
-                            vm.handleSwipe(direction: direction)
-                        },
-                        autoPlayPronunciation: autoPlayPronunciation
-                    )
-                    .padding(.horizontal)
-                } else if let vm = viewModel, !vm.hasMoreCards && !vm.currentWords.isEmpty {
-                    Spacer()
-                    completionView
-                    Spacer()
+                if let vm = viewModel {
+                    if vm.isLoading {
+                        Spacer()
+                        loadingView
+                        Spacer()
+                    } else if let error = vm.errorMessage {
+                        Spacer()
+                        errorView(message: error)
+                        Spacer()
+                    } else if vm.hasMoreCards {
+                        FlashcardStack(
+                            words: vm.currentWords,
+                            currentIndex: vm.currentIndex,
+                            onSwipe: { direction in
+                                vm.handleSwipe(direction: direction)
+                            },
+                            autoPlayPronunciation: autoPlayPronunciation,
+                            speechRate: speechRate
+                        )
+                        .padding(.horizontal)
+                    } else if !vm.hasMoreCards && !vm.currentWords.isEmpty {
+                        Spacer()
+                        completionView
+                        Spacer()
+                    } else {
+                        Spacer()
+                        noWordsView
+                        Spacer()
+                    }
                 } else {
                     Spacer()
-                    noWordsView
+                    loadingView
                     Spacer()
                 }
 
-                // Instructions
-                instructionsSection
+                // Instructions (hidden in focus mode)
+                if !focusModeEnabled {
+                    instructionsSection
+                }
 
                 Spacer(minLength: 16)
+            }
+
+            // First-time swipe hint overlay
+            if onboarding.showSwipeHint && viewModel?.hasMoreCards == true {
+                VStack {
+                    Spacer()
+                    SwipeGestureHint()
+                        .padding(.bottom, 120)
+                }
+                .transition(.opacity)
+                .zIndex(100)
             }
         }
         .navigationTitle(mode == .learning ? "学习模式" : "复习模式")
         .navigationBarTitleDisplayMode(.inline)
         .onAppear {
             if viewModel == nil {
-                viewModel = FlashcardViewModel(modelContext: modelContext, mode: mode)
+                viewModel = FlashcardViewModel(modelContext: modelContext, mode: mode, categoryFilter: categoryFilter)
             }
             loadAutoPlaySetting()
+            startTimer()
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
                 hasAppeared = true
             }
+        }
+        .onDisappear {
+            // Clean up to prevent memory leak when navigating away
+            stopTimer()
+            hasAppeared = false
+            viewModel = nil
+        }
+        .focusable()
+        .onKeyPress(.leftArrow) {
+            if let vm = viewModel, vm.hasMoreCards {
+                vm.handleSwipe(direction: .left)
+                return .handled
+            }
+            return .ignored
+        }
+        .onKeyPress(.rightArrow) {
+            if let vm = viewModel, vm.hasMoreCards {
+                vm.handleSwipe(direction: .right)
+                return .handled
+            }
+            return .ignored
+        }
+        .onKeyPress(.upArrow) {
+            if let vm = viewModel, vm.hasMoreCards {
+                vm.handleSwipe(direction: .up)
+                return .handled
+            }
+            return .ignored
+        }
+        .onKeyPress(.downArrow) {
+            if let vm = viewModel, vm.hasMoreCards {
+                vm.handleSwipe(direction: .down)
+                return .handled
+            }
+            return .ignored
+        }
+        .onKeyPress(.space) {
+            // Space bar to flip card - handled in FlashcardItem via tap gesture
+            return .ignored
         }
         .sheet(isPresented: Binding(
             get: { viewModel?.showSummary ?? false },
@@ -90,6 +172,8 @@ struct FlashcardView: View {
             if let vm = viewModel {
                 SessionSummarySheet(
                     stats: vm.sessionStats,
+                    newlyUnlockedAchievements: vm.newlyUnlockedAchievements,
+                    dailyGoalReached: vm.dailyGoalJustReached,
                     onContinue: {
                         vm.reset()
                     },
@@ -99,12 +183,45 @@ struct FlashcardView: View {
                 )
             }
         }
+        .masteryCelebration(
+            isShowing: Binding(
+                get: { viewModel?.showMasteryCelebration ?? false },
+                set: { if !$0 { viewModel?.showMasteryCelebration = false } }
+            ),
+            wordEnglish: viewModel?.masteredWordEnglish ?? ""
+        )
     }
 
     private var headerSection: some View {
         HStack(spacing: 16) {
             if let vm = viewModel {
-                // Current progress badge
+                if !focusModeEnabled {
+                    // Previous card button
+                    Button(action: {
+                        HapticManager.shared.impact()
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                            vm.goToPreviousCard()
+                        }
+                    }) {
+                        HStack(spacing: 4) {
+                            Image(systemName: "chevron.left")
+                                .font(.caption.weight(.bold))
+                            Text("上一个")
+                                .font(.caption)
+                                .fontWeight(.medium)
+                        }
+                        .foregroundStyle(vm.canGoBack ? .blue : .gray.opacity(0.5))
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(
+                            Capsule()
+                                .fill(vm.canGoBack ? Color.blue.opacity(0.1) : Color.gray.opacity(0.05))
+                        )
+                    }
+                    .disabled(!vm.canGoBack)
+                }
+
+                // Current progress badge (always visible)
                 HStack(spacing: 6) {
                     Image(systemName: "rectangle.stack.fill")
                         .font(.caption)
@@ -129,20 +246,45 @@ struct FlashcardView: View {
 
                 Spacer()
 
-                // Stats badges
-                HStack(spacing: 10) {
-                    StatBadge(
-                        icon: "checkmark.circle.fill",
-                        value: vm.sessionStats.knownCount,
-                        color: .green
-                    )
+                // Focus mode toggle
+                Button(action: {
+                    HapticManager.shared.selection()
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                        focusModeEnabled.toggle()
+                    }
+                }) {
+                    Image(systemName: focusModeEnabled ? "eye.slash.fill" : "eye.fill")
+                        .font(.subheadline)
+                        .foregroundStyle(
+                            focusModeEnabled
+                                ? LinearGradient(colors: [.orange, .yellow], startPoint: .top, endPoint: .bottom)
+                                : LinearGradient(colors: [.gray, .gray.opacity(0.7)], startPoint: .top, endPoint: .bottom)
+                        )
+                        .padding(8)
+                        .background(
+                            Circle()
+                                .fill(focusModeEnabled ? Color.orange.opacity(0.15) : Color.gray.opacity(0.1))
+                        )
+                }
 
-                    StatBadge(
-                        icon: "xmark.circle.fill",
-                        value: vm.sessionStats.unknownCount,
-                        color: .red
-                    )
+                if !focusModeEnabled {
+                    // Timer badge
+                    SessionTimerBadge(time: formattedTime)
 
+                    // Stats badges
+                    HStack(spacing: 10) {
+                        StatBadge(
+                            icon: "checkmark.circle.fill",
+                            value: vm.sessionStats.knownCount,
+                            color: .green
+                        )
+
+                        StatBadge(
+                            icon: "xmark.circle.fill",
+                            value: vm.sessionStats.unknownCount,
+                            color: .red
+                        )
+                    }
                 }
             }
         }
@@ -218,11 +360,12 @@ struct FlashcardView: View {
     }
 
     private var instructionsSection: some View {
-        VStack(spacing: 12) {
-            HStack(spacing: 24) {
+        VStack(spacing: 10) {
+            HStack(spacing: 16) {
                 InstructionItem(icon: "hand.thumbsdown.fill", text: "不认识", color: .red, direction: "←")
                 InstructionItem(icon: "heart.fill", text: "收藏", color: .yellow, direction: "↑")
                 InstructionItem(icon: "hand.thumbsup.fill", text: "认识", color: .green, direction: "→")
+                InstructionItem(icon: "bolt.fill", text: "太简单", color: .cyan, direction: "↓")
             }
 
             HStack(spacing: 4) {
@@ -234,7 +377,7 @@ struct FlashcardView: View {
                     .foregroundStyle(.secondary)
                 Text("·")
                     .foregroundStyle(.secondary)
-                Image(systemName: "arrow.left.and.right")
+                Image(systemName: "arrow.up.and.down.and.arrow.left.and.right")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
                 Text("滑动作答")
@@ -328,17 +471,62 @@ struct FlashcardView: View {
     }
 
     private var noWordsView: some View {
-        VStack(spacing: 24) {
+        EmptyStateView(
+            icon: mode == .learning ? "book.closed.fill" : "checkmark.circle.fill",
+            title: mode == .learning ? "暂无新单词" : "全部复习完成！",
+            description: mode == .learning
+                ? "所有单词都已学习过，继续复习已学单词吧"
+                : "太棒了！没有需要复习的单词，继续保持学习习惯",
+            iconColor: mode == .learning ? .blue : .green,
+            actionTitle: mode == .learning ? "去复习" : "学习新词",
+            action: {
+                dismiss()
+            }
+        )
+    }
+
+    private var loadingView: some View {
+        VStack(spacing: 20) {
             ZStack {
                 Circle()
-                    .fill(Color.gray.opacity(0.1))
-                    .frame(width: 140, height: 140)
+                    .fill(
+                        LinearGradient(
+                            colors: [.accentColor.opacity(0.15), .accentColor.opacity(0.08)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .frame(width: 100, height: 100)
 
-                Image(systemName: mode == .learning ? "book.closed.fill" : "clock.fill")
-                    .font(.system(size: 60))
+                ProgressView()
+                    .scaleEffect(1.5)
+                    .tint(.accentColor)
+            }
+
+            Text("正在加载单词...")
+                .font(.headline)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private func errorView(message: String) -> some View {
+        VStack(spacing: 20) {
+            ZStack {
+                Circle()
+                    .fill(
+                        LinearGradient(
+                            colors: [.red.opacity(0.15), .red.opacity(0.08)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .frame(width: 100, height: 100)
+
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.system(size: 40))
                     .foregroundStyle(
                         LinearGradient(
-                            colors: [.gray, .gray.opacity(0.7)],
+                            colors: [.red, .orange],
                             startPoint: .top,
                             endPoint: .bottom
                         )
@@ -346,27 +534,58 @@ struct FlashcardView: View {
             }
 
             VStack(spacing: 8) {
-                Text(mode == .learning ? "暂无新单词" : "暂无复习")
-                    .font(.title2)
-                    .fontWeight(.bold)
+                Text("加载失败")
+                    .font(.headline)
 
-                Text(mode == .learning ? "暂时没有新单词需要学习" : "没有单词需要复习，稍后再来吧！")
+                Text(message)
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
-                    .padding(.horizontal, 40)
+            }
+
+            Button(action: {
+                viewModel?.reset()
+            }) {
+                HStack(spacing: 8) {
+                    Image(systemName: "arrow.clockwise")
+                    Text("重试")
+                }
+                .font(.headline)
+                .foregroundStyle(.white)
+                .padding(.horizontal, 24)
+                .padding(.vertical, 12)
+                .background(
+                    LinearGradient(
+                        colors: [.accentColor, .accentColor.opacity(0.8)],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
+                )
+                .clipShape(Capsule())
             }
         }
-        .offset(y: hasAppeared ? 0 : 30)
-        .opacity(hasAppeared ? 1 : 0)
-        .animation(.spring(response: 0.6, dampingFraction: 0.8), value: hasAppeared)
+        .padding()
     }
 
     private func loadAutoPlaySetting() {
         let descriptor = FetchDescriptor<UserSettings>()
         if let settings = try? modelContext.fetch(descriptor).first {
             autoPlayPronunciation = settings.autoPlayPronunciation
+            speechRate = settings.speechRate
         }
+    }
+
+    private func startTimer() {
+        sessionStartTime = Date()
+        elapsedTime = 0
+        timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { _ in
+            elapsedTime = Date().timeIntervalSince(sessionStartTime)
+        }
+    }
+
+    private func stopTimer() {
+        timer?.invalidate()
+        timer = nil
     }
 }
 
@@ -437,6 +656,54 @@ private struct StatBadge: View {
         .onAppear {
             withAnimation(.easeInOut(duration: 1.5).repeatForever(autoreverses: true)) {
                 glowOpacity = 1.0
+            }
+        }
+    }
+}
+
+private struct SessionTimerBadge: View {
+    let time: String
+
+    @State private var pulseAnimation = false
+
+    var body: some View {
+        HStack(spacing: 5) {
+            Image(systemName: "timer")
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(
+                    LinearGradient(
+                        colors: [.purple, .purple.opacity(0.7)],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                )
+                .scaleEffect(pulseAnimation ? 1.1 : 1.0)
+
+            Text(time)
+                .font(.caption)
+                .fontWeight(.bold)
+                .foregroundStyle(.primary)
+                .monospacedDigit()
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(
+            Capsule()
+                .fill(
+                    LinearGradient(
+                        colors: [Color.purple.opacity(0.12), Color.purple.opacity(0.06)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+        )
+        .overlay(
+            Capsule()
+                .stroke(Color.purple.opacity(0.15), lineWidth: 1)
+        )
+        .onAppear {
+            withAnimation(.easeInOut(duration: 1.0).repeatForever(autoreverses: true)) {
+                pulseAnimation = true
             }
         }
     }

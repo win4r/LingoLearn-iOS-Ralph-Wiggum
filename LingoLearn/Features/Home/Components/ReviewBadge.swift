@@ -186,6 +186,10 @@ struct ReviewBadge: View {
             .shadow(color: urgencyLevel.color.opacity(0.15), radius: 12, y: 4)
         }
         .buttonStyle(PressableButtonStyle())
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("待复习单词\(wordsDueForReview)个,\(urgencyLevel.message)")
+        .accessibilityHint("双击开始复习")
+        .accessibilityAddTraits(.isButton)
         .opacity(showContent ? 1 : 0)
         .offset(y: showContent ? 0 : 10)
         .onAppear {

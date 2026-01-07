@@ -15,6 +15,8 @@ struct FlameStreakView: View {
     @State private var glowOpacity: Double = 0
     @State private var sparkleRotation: Double = 0
     @State private var appeared = false
+    @State private var flameOffset: CGFloat = 0
+    @State private var particlePhase: Double = 0
 
     private var isMilestone: Bool {
         [7, 14, 30, 50, 100, 365].contains(streakCount)
@@ -55,6 +57,17 @@ struct FlameStreakView: View {
                     }
                 }
 
+                // Rising particles for active streaks
+                if streakCount > 0 {
+                    ForEach(0..<5, id: \.self) { i in
+                        FlameParticle(
+                            color: flameColors[i % flameColors.count],
+                            delay: Double(i) * 0.3,
+                            phase: particlePhase
+                        )
+                    }
+                }
+
                 // Glow effect
                 Circle()
                     .fill(
@@ -67,13 +80,15 @@ struct FlameStreakView: View {
                     )
                     .frame(width: 50, height: 50)
                     .opacity(isMilestone ? glowOpacity : 0.3)
+                    .scaleEffect(1 + flameOffset * 0.1)
 
-                // Flame icon with enhanced styling
+                // Flame icon with enhanced styling and flicker
                 Image(systemName: "flame.fill")
                     .font(.system(size: 30))
                     .foregroundStyle(flameColor)
-                    .scaleEffect(flameScale)
-                    .shadow(color: accentColor.opacity(0.5), radius: 6, y: 2)
+                    .scaleEffect(flameScale + flameOffset * 0.05)
+                    .offset(y: flameOffset)
+                    .shadow(color: accentColor.opacity(0.5), radius: 6 + flameOffset * 2, y: 2)
                     .symbolEffect(.bounce, value: isAnimating)
             }
 
@@ -172,6 +187,9 @@ struct FlameStreakView: View {
             if isMilestone {
                 startGlowAnimation()
             }
+            if streakCount > 0 {
+                startFlickerAnimation()
+            }
         }
         .onChange(of: streakCount) { oldValue, newValue in
             if newValue > oldValue {
@@ -186,6 +204,17 @@ struct FlameStreakView: View {
         }
         withAnimation(.linear(duration: 8).repeatForever(autoreverses: false)) {
             sparkleRotation = 360
+        }
+    }
+
+    private func startFlickerAnimation() {
+        // Flame flicker effect
+        withAnimation(.easeInOut(duration: 0.15).repeatForever(autoreverses: true)) {
+            flameOffset = -1.5
+        }
+        // Particle animation phase
+        withAnimation(.linear(duration: 2).repeatForever(autoreverses: false)) {
+            particlePhase = 1
         }
     }
 
@@ -205,6 +234,56 @@ struct FlameStreakView: View {
 
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
             isAnimating = false
+        }
+    }
+}
+
+// MARK: - Flame Particle
+
+private struct FlameParticle: View {
+    let color: Color
+    let delay: Double
+    let phase: Double
+
+    @State private var yOffset: CGFloat = 0
+    @State private var xOffset: CGFloat = 0
+    @State private var opacity: Double = 0
+    @State private var scale: CGFloat = 1
+
+    var body: some View {
+        Circle()
+            .fill(color)
+            .frame(width: 4, height: 4)
+            .blur(radius: 1)
+            .offset(x: xOffset, y: yOffset)
+            .opacity(opacity)
+            .scaleEffect(scale)
+            .onAppear {
+                startAnimation()
+            }
+            .onChange(of: phase) { _, _ in
+                startAnimation()
+            }
+    }
+
+    private func startAnimation() {
+        // Reset position
+        yOffset = 0
+        xOffset = CGFloat.random(in: -5...5)
+        opacity = 0
+        scale = 1
+
+        // Animate upward
+        withAnimation(.easeOut(duration: 1.5).delay(delay)) {
+            yOffset = -35
+            xOffset += CGFloat.random(in: -8...8)
+            opacity = 0.8
+        }
+
+        // Fade out
+        withAnimation(.easeIn(duration: 0.5).delay(delay + 1.0)) {
+            opacity = 0
+            scale = 0.3
         }
     }
 }

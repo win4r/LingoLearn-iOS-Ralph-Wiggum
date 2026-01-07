@@ -10,12 +10,14 @@ import SwiftUI
 struct StreakCard: View {
     let currentStreak: Int
     let longestStreak: Int
+    var studiedDates: [Date] = []
 
     @State private var showContent = false
     @State private var animatedStreak: Int = 0
     @State private var glowOpacity: Double = 0
     @State private var sparkleRotation: Double = 0
     @State private var recordBadgePulse = false
+    @State private var calendarAppeared = false
 
     private var isNewRecord: Bool {
         currentStreak > 0 && currentStreak >= longestStreak
@@ -111,6 +113,10 @@ struct StreakCard: View {
                 FlameStreakView(streakCount: currentStreak)
                     .opacity(showContent ? 1 : 0)
                     .offset(x: showContent ? 0 : -20)
+
+                // Weekly streak calendar
+                WeeklyStreakCalendar(studiedDates: studiedDates, appeared: calendarAppeared)
+                    .opacity(showContent ? 1 : 0)
 
                 HStack(spacing: 16) {
                     // Trophy with glow
@@ -232,9 +238,16 @@ struct StreakCard: View {
                 )
         )
         .shadow(color: streakLevelColors.first?.opacity(0.15) ?? .clear, radius: 12, y: 4)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("连续学习\(currentStreak)天,\(streakLevelName),最长记录\(longestStreak)天\(isNewRecord && currentStreak > 1 ? ",新纪录!" : "")")
         .onAppear {
             withAnimation(.easeOut(duration: 0.5).delay(0.3)) {
                 showContent = true
+            }
+
+            // Calendar animation
+            withAnimation(.easeOut(duration: 0.4).delay(0.5)) {
+                calendarAppeared = true
             }
 
             // Glow animation
@@ -285,7 +298,106 @@ struct StreakCard: View {
     }
 }
 
+// MARK: - Weekly Streak Calendar
+
+private struct WeeklyStreakCalendar: View {
+    let studiedDates: [Date]
+    let appeared: Bool
+
+    private let calendar = Calendar.current
+    private let dayNames = ["日", "一", "二", "三", "四", "五", "六"]
+
+    private var last7Days: [Date] {
+        (0..<7).compactMap { offset in
+            calendar.date(byAdding: .day, value: -6 + offset, to: Date())
+        }
+    }
+
+    private func wasStudied(on date: Date) -> Bool {
+        studiedDates.contains { studiedDate in
+            calendar.isDate(studiedDate, inSameDayAs: date)
+        }
+    }
+
+    private func isToday(_ date: Date) -> Bool {
+        calendar.isDateInToday(date)
+    }
+
+    var body: some View {
+        HStack(spacing: 6) {
+            ForEach(Array(last7Days.enumerated()), id: \.offset) { index, date in
+                let studied = wasStudied(on: date)
+                let today = isToday(date)
+
+                VStack(spacing: 4) {
+                    Text(dayNames[calendar.component(.weekday, from: date) - 1])
+                        .font(.caption2)
+                        .fontWeight(.medium)
+                        .foregroundStyle(.secondary)
+
+                    ZStack {
+                        Circle()
+                            .fill(
+                                studied ?
+                                    LinearGradient(
+                                        colors: [.orange, .red.opacity(0.8)],
+                                        startPoint: .topLeading,
+                                        endPoint: .bottomTrailing
+                                    ) :
+                                    LinearGradient(
+                                        colors: [Color(.systemGray5), Color(.systemGray6)],
+                                        startPoint: .topLeading,
+                                        endPoint: .bottomTrailing
+                                    )
+                            )
+                            .frame(width: 28, height: 28)
+                            .shadow(color: studied ? .orange.opacity(0.3) : .clear, radius: 4, y: 2)
+
+                        if studied {
+                            Image(systemName: "flame.fill")
+                                .font(.caption)
+                                .foregroundStyle(.white)
+                        } else {
+                            Text("\(calendar.component(.day, from: date))")
+                                .font(.caption2)
+                                .fontWeight(.medium)
+                                .foregroundStyle(.secondary)
+                        }
+
+                        if today {
+                            Circle()
+                                .stroke(Color.orange, lineWidth: 2)
+                                .frame(width: 32, height: 32)
+                        }
+                    }
+                }
+                .scaleEffect(appeared ? 1 : 0.5)
+                .opacity(appeared ? 1 : 0)
+                .animation(.spring(response: 0.4, dampingFraction: 0.7).delay(Double(index) * 0.05), value: appeared)
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(Color(.secondarySystemGroupedBackground))
+        )
+    }
+}
+
 #Preview {
-    StreakCard(currentStreak: 7, longestStreak: 14)
-        .padding()
+    VStack(spacing: 16) {
+        StreakCard(
+            currentStreak: 7,
+            longestStreak: 14,
+            studiedDates: [
+                Date(),
+                Calendar.current.date(byAdding: .day, value: -1, to: Date())!,
+                Calendar.current.date(byAdding: .day, value: -2, to: Date())!,
+                Calendar.current.date(byAdding: .day, value: -3, to: Date())!
+            ]
+        )
+        StreakCard(currentStreak: 0, longestStreak: 5)
+    }
+    .padding()
 }

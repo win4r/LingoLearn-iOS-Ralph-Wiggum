@@ -12,10 +12,12 @@ struct WrongWordReviewView: View {
     let wrongWords: [Word]
 
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.modelContext) private var modelContext
     @State private var currentIndex = 0
     @State private var isFlipped = false
     @State private var showCompletion = false
     @State private var appeared = false
+    @State private var speechRate: SpeechRate = .normal
     @StateObject private var speechService = SpeechService.shared
 
     private var currentWord: Word? {
@@ -134,7 +136,7 @@ struct WrongWordReviewView: View {
                         word: word,
                         isFlipped: $isFlipped,
                         onSpeak: {
-                            speechService.speak(text: word.english)
+                            speechService.speak(text: word.english, rate: speechRate.rate)
                         }
                     )
                     .padding(.horizontal)
@@ -266,6 +268,16 @@ struct WrongWordReviewView: View {
         }
         .navigationTitle("错题复习")
         .navigationBarTitleDisplayMode(.inline)
+        .onAppear {
+            loadSpeechRate()
+        }
+    }
+
+    private func loadSpeechRate() {
+        let descriptor = FetchDescriptor<UserSettings>()
+        if let settings = try? modelContext.fetch(descriptor).first {
+            speechRate = settings.speechRate
+        }
     }
 
     private var completionView: some View {

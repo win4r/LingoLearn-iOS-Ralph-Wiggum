@@ -31,6 +31,9 @@ class ProgressViewModel {
     var reviewingCount: Int = 0
     var masteredCount: Int = 0
 
+    // Session History
+    var recentSessions: [StudySession] = []
+
     var formattedTotalStudyTime: String {
         let hours = Int(totalStudyTime) / 3600
         if hours > 0 {
@@ -53,6 +56,22 @@ class ProgressViewModel {
         loadStats()
         loadChartData()
         loadMasteryDistribution()
+        loadRecentSessions()
+    }
+
+    private func loadRecentSessions() {
+        // Fetch the 10 most recent completed sessions
+        var descriptor = FetchDescriptor<StudySession>(
+            predicate: #Predicate { session in
+                session.completed == true
+            },
+            sortBy: [SortDescriptor(\.date, order: .reverse)]
+        )
+        descriptor.fetchLimit = 10
+
+        if let sessions = try? modelContext.fetch(descriptor) {
+            recentSessions = sessions
+        }
     }
 
     private func loadStats() {

@@ -62,11 +62,17 @@ enum AppConstants {
         /// Quality threshold for correct answer (>= 3 is acceptable)
         static let correctThreshold = 3
 
-        /// Quality rating for known word (Good)
+        /// Quality rating for unknown word (Complete blackout - 0)
+        static let unknownQuality = 0
+
+        /// Quality rating for hard recall (Correct but with difficulty - 3)
+        static let hardQuality = 3
+
+        /// Quality rating for known word (Good recall - 4)
         static let knownQuality = 4
 
-        /// Quality rating for unknown word (Incorrect)
-        static let unknownQuality = 0
+        /// Quality rating for easy word (Perfect/instant recall - 5)
+        static let easyQuality = 5
 
         /// Initial interval in days for first review
         static let firstInterval = 1
