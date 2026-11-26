@@ -1,5 +1,3 @@
-# [🚀观看我的哔哩哔哩视频](https://space.bilibili.com/3493277319825652)
-
 # LingoLearn - iOS 背单词应用
 
 ### 🔥🔥🔥对于视频1：https://youtu.be/_h2MGwJO1Yc
